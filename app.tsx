@@ -19,6 +19,8 @@ import {
 import {
   definePluginApp,
   experimental_Diff as Diff,
+  experimental_FileLink as FileLink,
+  experimental_UrlLink as UrlLink,
   useBbNavigate,
   useRealtime,
   useRpc,
@@ -659,6 +661,7 @@ function StatusCell({ item }: { item: Item }) {
 }
 
 function RowMenu({ item }: { item: Item }) {
+  const navigate = useBbNavigate();
   const viewer = useViewer();
   const { setIssueState, setAssignees } = useIssueMutations();
   const assignedToMe = viewer !== null && item.assignees.includes(viewer);
@@ -703,7 +706,11 @@ function RowMenu({ item }: { item: Item }) {
           </DropdownMenuItem>
         ) : null}
         {item.kind === "issue" ? <DropdownMenuSeparator /> : null}
-        <DropdownMenuItem onSelect={() => window.open(item.url, "_blank")}>
+        <DropdownMenuItem
+          onSelect={() => {
+            navigate.experimental_openUrl(item.url);
+          }}
+        >
           Open on GitHub ↗
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -1139,14 +1146,9 @@ function IssueDetailView({
           {repo} · #{number}
         </span>
         <span className="flex-1" />
-        <a
-          href={detail.url}
-          target="_blank"
-          rel="noreferrer"
-          className="underline hover:text-foreground"
-        >
+        <UrlLink href={detail.url} className="underline hover:text-foreground">
           Open on GitHub ↗
-        </a>
+        </UrlLink>
       </div>
 
       <div className="flex items-start gap-3">
@@ -1369,14 +1371,12 @@ function ChecksSection({ checks }: { checks: PullCheck[] }) {
               <span className={`size-2 shrink-0 rounded-full ${checkDotClass(check.status)}`} />
               <span className="min-w-0 flex-1 truncate text-foreground">{check.name}</span>
               {check.url.length > 0 ? (
-                <a
+                <UrlLink
                   href={check.url}
-                  target="_blank"
-                  rel="noreferrer"
                   className="shrink-0 text-muted-foreground underline hover:text-foreground"
                 >
                   details ↗
-                </a>
+                </UrlLink>
               ) : null}
             </div>
           ))}
@@ -1386,18 +1386,43 @@ function ChecksSection({ checks }: { checks: PullCheck[] }) {
   );
 }
 
-function FileDiffCard({ file, url }: { file: PullFile; url: string }) {
+function FileDiffCard({
+  environmentId,
+  file,
+  url,
+}: {
+  environmentId: string | null;
+  file: PullFile;
+  url: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <button
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent/50"
-        onClick={() => setOpen((prev) => !prev)}
-      >
-        <span className="shrink-0 text-xs text-muted-foreground">{open ? "▾" : "▸"}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
-          {file.path}
-        </span>
+      <div className="flex w-full items-center gap-2 px-3 py-2 hover:bg-accent/50">
+        <button
+          type="button"
+          className="shrink-0 text-xs text-muted-foreground"
+          aria-label={`${open ? "Collapse" : "Expand"} ${file.path} diff`}
+          onClick={() => setOpen((prev) => !prev)}
+        >
+          {open ? "▾" : "▸"}
+        </button>
+        {environmentId === null ? (
+          <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
+            {file.path}
+          </span>
+        ) : (
+          <FileLink
+            className="min-w-0 flex-1 truncate font-mono text-xs text-foreground hover:underline"
+            target={{
+              kind: "workspace",
+              environmentId,
+              path: file.path,
+            }}
+          >
+            {file.path}
+          </FileLink>
+        )}
         {file.status !== "modified" ? (
           <Badge variant="secondary" className="shrink-0 font-normal text-muted-foreground">
             {file.status}
@@ -1409,7 +1434,7 @@ function FileDiffCard({ file, url }: { file: PullFile; url: string }) {
         <span className="shrink-0 text-xs text-red-600 dark:text-red-400">
           −{file.deletions}
         </span>
-      </button>
+      </div>
       {open ? (
         file.patch !== null ? (
           <div className="border-t border-border">
@@ -1418,9 +1443,9 @@ function FileDiffCard({ file, url }: { file: PullFile; url: string }) {
         ) : (
           <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
             Diff too large to inline —{" "}
-            <a href={`${url}/files`} target="_blank" rel="noreferrer" className="underline">
+            <UrlLink href={`${url}/files`} className="underline">
               view on GitHub ↗
-            </a>
+            </UrlLink>
           </p>
         )
       ) : null}
@@ -1578,12 +1603,14 @@ function PullDetailView({
   onBack,
   backLabel = "Pull requests",
   compact = false,
+  workspaceEnvironmentId = null,
 }: {
   repo: string;
   number: number;
   onBack?: () => void;
   backLabel?: string;
   compact?: boolean;
+  workspaceEnvironmentId?: string | null;
 }) {
   const rpc = useRpc<typeof githubRpcContract>();
   const links = useLinks();
@@ -1644,7 +1671,12 @@ function PullDetailView({
             </span>
           </h3>
           {pull.files.map((file) => (
-            <FileDiffCard key={file.path} file={file} url={pull.url} />
+            <FileDiffCard
+              key={file.path}
+              environmentId={workspaceEnvironmentId}
+              file={file}
+              url={pull.url}
+            />
           ))}
         </div>
       ) : null}
@@ -1665,14 +1697,12 @@ function PullDetailView({
           {repo} · #{number}
         </span>
         <span className="flex-1" />
-        <a
+        <UrlLink
           href={pull.url}
-          target="_blank"
-          rel="noreferrer"
           className="shrink-0 underline hover:text-foreground"
         >
           Open on GitHub ↗
-        </a>
+        </UrlLink>
       </div>
 
       <div className="flex items-start gap-3">
@@ -1800,16 +1830,35 @@ function PullPickerList({ onPick }: { onPick: (repo: string, number: number) => 
 function PullPanelTab({ threadId }: PluginThreadPanelProps) {
   const rpc = useRpc<typeof githubRpcContract>();
   const [resolved, setResolved] = useState(false);
-  const [selected, setSelected] = useState<{ repo: string; number: number } | null>(null);
+  const [selected, setSelected] = useState<{
+    repo: string;
+    number: number;
+    environmentId: string | null;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     rpc.call("pullForThread", { threadId }).then(
       (result) => {
         if (cancelled) return;
-        const pull = (result as { pull?: { repo?: unknown; number?: unknown } | null })?.pull;
+        const pull = (
+          result as {
+            pull?: {
+              repo?: unknown;
+              number?: unknown;
+              environmentId?: unknown;
+            } | null;
+          }
+        )?.pull;
         if (pull && typeof pull.repo === "string" && typeof pull.number === "number") {
-          setSelected({ repo: pull.repo, number: pull.number });
+          setSelected({
+            repo: pull.repo,
+            number: pull.number,
+            environmentId:
+              typeof pull.environmentId === "string"
+                ? pull.environmentId
+                : null,
+          });
         }
         setResolved(true);
       },
@@ -1831,7 +1880,11 @@ function PullPanelTab({ threadId }: PluginThreadPanelProps) {
         <p className="text-xs text-muted-foreground">
           No pull request is linked to this thread yet — pick one:
         </p>
-        <PullPickerList onPick={(repo, number) => setSelected({ repo, number })} />
+        <PullPickerList
+          onPick={(repo, number) =>
+            setSelected({ repo, number, environmentId: null })
+          }
+        />
       </div>
     );
   }
@@ -1840,6 +1893,7 @@ function PullPanelTab({ threadId }: PluginThreadPanelProps) {
       repo={selected.repo}
       number={selected.number}
       compact
+      workspaceEnvironmentId={selected.environmentId}
       backLabel="All PRs"
       onBack={() => setSelected(null)}
     />
@@ -2014,7 +2068,7 @@ function GithubPanel({ subPath }: PluginNavPanelProps) {
   }, []);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 md:p-5">
+    <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
       <PageBody className="max-w-5xl">
         <GithubPanelBody
           route={route}
@@ -2075,6 +2129,16 @@ function GithubPanelBody({
   query: string;
   setQuery: (query: string) => void;
 }) {
+  const openItem = useCallback(
+    (itemKind: "issue" | "pr", repo: string, number: number) => {
+      navigate(
+        itemKind === "pr"
+          ? { view: "pull", repo, number }
+          : { view: "issue", repo, number },
+      );
+    },
+    [navigate],
+  );
   if (status !== null && status.ghState === "unavailable") {
     return (
       <EmptyState
@@ -2154,7 +2218,7 @@ function GithubPanelBody({
         setQuery={setQuery}
         repos={status?.repos ?? []}
         onOpenItem={(repo, number) =>
-          navigate(kind === "pr" ? { view: "pull", repo, number } : { view: "issue", repo, number })
+          openItem(kind === "pr" ? "pr" : "issue", repo, number)
         }
       />
     </div>
