@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -65,6 +66,12 @@ import {
   type TablePreferences,
 } from "./table-layout.js";
 import { panelCache, isSyncStale } from "./panel-cache.js";
+import {
+  itemNoteKey,
+  readItemNote,
+  writeItemNote,
+  subscribeItemNotes,
+} from "./item-notes.js";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
 import {
@@ -668,116 +675,187 @@ function ItemRow({
 }) {
   const { spawn, spawningKey } = useSpawn();
   const busy = spawningKey === `${item.repo}#${item.number}`;
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(true);
+  const notesId = useId();
+  const noteKey = itemNoteKey(item.kind, item.repo, item.number);
+  const readNote = useCallback(() => readItemNote(noteKey), [noteKey]);
+  const subscribeNote = useCallback(
+    (listener: () => void) => subscribeItemNotes(noteKey, listener),
+    [noteKey],
+  );
+  const note = useSyncExternalStore(subscribeNote, readNote);
   return (
-    <div
-      role="row"
-      className="grid cursor-pointer grid-cols-1 gap-y-2 px-3 py-3 hover:bg-accent/50 @[48rem]:grid @[48rem]:grid-cols-[var(--table-columns)] @[48rem]:items-center @[48rem]:gap-3 @[48rem]:py-2"
-      onClick={onOpen}
-    >
-      <span
-        role="cell"
-        className="flex min-w-0 flex-col items-start gap-1.5 @[48rem]:order-2 @[48rem]:flex-1 @[48rem]:flex-row @[48rem]:items-center @[48rem]:gap-2"
-      >
-        <span className="min-w-0 flex-1 line-clamp-3 text-sm font-medium leading-snug text-foreground @[48rem]:line-clamp-1 @[48rem]:leading-normal">
-          {item.title}
-        </span>
-        <span
-          className="text-xs text-muted-foreground @[48rem]:hidden"
-          title={item.repo}
-        >
-          {item.repo.split("/").pop()}
-        </span>
-        <LabelChips
-          labels={item.labels}
-          className="hidden shrink-0 @[60rem]:flex"
-        />
-        <ThreadPills links={links} />
-      </span>
-      <span
-        role="presentation"
-        className="flex min-w-0 items-center gap-2 @[48rem]:contents"
+    <div role="rowgroup">
+      <div
+        role="row"
+        className="grid cursor-pointer grid-cols-1 gap-y-2 px-3 py-3 hover:bg-accent/50 @[48rem]:grid @[48rem]:grid-cols-[var(--table-columns)] @[48rem]:items-center @[48rem]:gap-3 @[48rem]:py-2"
+        onClick={onOpen}
       >
         <span
           role="cell"
-          className={`${COL.id} font-mono text-xs text-muted-foreground @[48rem]:order-1`}
+          className="flex min-w-0 items-start gap-1 @[48rem]:order-2"
         >
-          #{item.number}
-        </span>
-        <span
-          role="cell"
-          className={`${COL.repo} text-xs text-muted-foreground @[48rem]:order-3`}
-          title={item.repo}
-        >
-          {item.repo.split("/").pop()}
-        </span>
-        <span
-          role="cell"
-          className={`${COL.assignee} ${item.assignees.length === 0 ? "hidden @[48rem]:flex" : "flex"} text-xs text-muted-foreground @[48rem]:order-4`}
-        >
-          <AssigneeCell assignees={item.assignees} />
-        </span>
-        <span role="cell" className={`${COL.status} @[48rem]:order-5`}>
-          <StatusCell item={item} />
-        </span>
-        <span
-          role="cell"
-          className={`${COL.updated} text-xs text-muted-foreground @[48rem]:order-6`}
-        >
-          {relativeTime(item.updatedAt)}
-        </span>
-        <span role="cell" className={`${COL.actions} @[48rem]:order-7`}>
           <Button
-            size="sm"
-            variant="outline"
-            className="h-7"
-            disabled={spawningKey !== null}
+            size="icon"
+            variant="ghost"
+            className="relative size-6 shrink-0"
+            aria-label={`${notesOpen ? "Hide" : "Show"} notes for ${item.repo}#${item.number}`}
+            aria-expanded={notesOpen}
+            aria-controls={notesId}
             onClick={(event) => {
               event.stopPropagation();
-              spawn(
-                item.kind === "issue" ? "startWork" : "startReview",
-                item.repo,
-                item.number,
-              );
+              setNotesOpen((open) => !open);
             }}
           >
-            {busy ? "…" : item.kind === "issue" ? "Start" : "Review"}
+            <Icon
+              name={notesOpen ? "ChevronUp" : "ChevronDown"}
+              className="size-3.5"
+            />
+            {note.length > 0 ? (
+              <span
+                aria-hidden="true"
+                className="absolute bottom-0.5 right-0.5 size-1 rounded-full bg-foreground"
+              />
+            ) : null}
           </Button>
-          {item.kind === "pr" ? (
-            <>
-              <Button size="sm" variant="outline" className="h-7" asChild>
-                <a
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open on GitHub in your browser"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  GitHub
-                </a>
-              </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                className="size-7"
-                aria-label="Copy GitHub link"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void experimental_copyToClipboard({ text: item.url }).then(
-                    (copied) => {
-                      if (copied) toast.success("Link copied");
-                      else toast.error("Could not copy the link");
-                    },
-                  );
-                }}
-              >
-                <Icon name="Link" className="size-3.5" />
-              </Button>
-            </>
-          ) : (
-            <RowMenu item={item} />
-          )}
+          <span className="flex min-w-0 flex-1 flex-col items-start gap-1.5 @[48rem]:order-2 @[48rem]:flex-1 @[48rem]:flex-row @[48rem]:items-center @[48rem]:gap-2">
+            <span className="min-w-0 flex-1 line-clamp-3 text-sm font-medium leading-snug text-foreground @[48rem]:line-clamp-1 @[48rem]:leading-normal">
+              {item.title}
+            </span>
+            <span
+              className="text-xs text-muted-foreground @[48rem]:hidden"
+              title={item.repo}
+            >
+              {item.repo.split("/").pop()}
+            </span>
+            <LabelChips
+              labels={item.labels}
+              className="hidden shrink-0 @[60rem]:flex"
+            />
+            <ThreadPills links={links} />
+          </span>
         </span>
-      </span>
+        <span
+          role="presentation"
+          className="flex min-w-0 items-center gap-2 @[48rem]:contents"
+        >
+          <span
+            role="cell"
+            className={`${COL.id} font-mono text-xs text-muted-foreground @[48rem]:order-1`}
+          >
+            #{item.number}
+          </span>
+          <span
+            role="cell"
+            className={`${COL.repo} text-xs text-muted-foreground @[48rem]:order-3`}
+            title={item.repo}
+          >
+            {item.repo.split("/").pop()}
+          </span>
+          <span
+            role="cell"
+            className={`${COL.assignee} ${item.assignees.length === 0 ? "hidden @[48rem]:flex" : "flex"} text-xs text-muted-foreground @[48rem]:order-4`}
+          >
+            <AssigneeCell assignees={item.assignees} />
+          </span>
+          <span role="cell" className={`${COL.status} @[48rem]:order-5`}>
+            <StatusCell item={item} />
+          </span>
+          <span
+            role="cell"
+            className={`${COL.updated} text-xs text-muted-foreground @[48rem]:order-6`}
+          >
+            {relativeTime(item.updatedAt)}
+          </span>
+          <span role="cell" className={`${COL.actions} @[48rem]:order-7`}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              disabled={spawningKey !== null}
+              onClick={(event) => {
+                event.stopPropagation();
+                spawn(
+                  item.kind === "issue" ? "startWork" : "startReview",
+                  item.repo,
+                  item.number,
+                );
+              }}
+            >
+              {busy ? "…" : item.kind === "issue" ? "Start" : "Review"}
+            </Button>
+            {item.kind === "pr" ? (
+              <>
+                <Button size="sm" variant="outline" className="h-7" asChild>
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open on GitHub in your browser"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    GitHub
+                  </a>
+                </Button>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="size-7"
+                  aria-label="Copy GitHub link"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void experimental_copyToClipboard({ text: item.url }).then(
+                      (copied) => {
+                        if (copied) toast.success("Link copied");
+                        else toast.error("Could not copy the link");
+                      },
+                    );
+                  }}
+                >
+                  <Icon name="Link" className="size-3.5" />
+                </Button>
+              </>
+            ) : (
+              <RowMenu item={item} />
+            )}
+          </span>
+        </span>
+      </div>
+      {notesOpen ? (
+        <div
+          role="row"
+          className="border-t border-border/50 bg-muted/20 px-4 py-3"
+        >
+          <div
+            role="cell"
+            aria-colspan={TABLE_COLUMNS.length}
+            className="space-y-2"
+          >
+            <label
+              htmlFor={notesId}
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Notes
+            </label>
+            <Textarea
+              id={notesId}
+              value={note}
+              rows={3}
+              aria-label={`Notes for ${item.repo}#${item.number}`}
+              placeholder="Add a note…"
+              onChange={(event) =>
+                setNotesSaved(writeItemNote(noteKey, event.target.value))
+              }
+            />
+            <p className="text-xs text-muted-foreground" role="status">
+              {notesSaved
+                ? "Saved in this browser"
+                : "Couldn’t save in this browser. Keep this window open to retain these notes."}
+            </p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

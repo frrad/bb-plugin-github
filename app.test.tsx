@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { fireEvent, within } from "@testing-library/dom";
+import { itemNoteKey } from "./item-notes";
 import { panelCache } from "./panel-cache";
 import { SEARCHES_KEY } from "./saved-searches.js";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -12,6 +13,131 @@ const app = await loadPluginApp(() => import("./app"));
 beforeEach(() => {
   window.localStorage.clear();
   for (const cache of Object.values(panelCache)) cache.clear();
+});
+
+describe("item notes", () => {
+  it("expands without navigating, shares notes across searches, and restores them on return", async () => {
+    const item = {
+      number: 42,
+      title: "A pull request",
+      repo: "acme/widgets",
+      kind: "pr",
+      state: "OPEN",
+      author: "octocat",
+      labels: [],
+      assignees: [],
+      url: "https://github.com/acme/widgets/pull/42",
+      body: "",
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
+    window.localStorage.setItem(
+      SEARCHES_KEY,
+      JSON.stringify([
+        {
+          id: "one",
+          name: "First search",
+          kind: "pr",
+          query: "",
+          collapsed: false,
+        },
+        {
+          id: "two",
+          name: "Second search",
+          kind: "pr",
+          query: "",
+          collapsed: false,
+        },
+      ]),
+    );
+    const mount = () =>
+      renderSlot(
+        app.navPanels[0]!,
+        { subPath: "" },
+        {
+          rpc: {
+            status: () => ({
+              ghOk: true,
+              ghState: "ready",
+              ghError: null,
+              repos: [{ repo: "acme/widgets", projectId: null }],
+              lastSyncedAt: new Date().toISOString(),
+            }),
+            listItems: () => ({ items: [item] }),
+            listLinks: () => ({ links: {} }),
+            viewer: () => ({ login: "octocat" }),
+          },
+        },
+      );
+    const slot = mount();
+    await slot.findAllByText("A pull request");
+    const first = within(slot.getByRole("region", { name: "First search" }));
+    const second = within(slot.getByRole("region", { name: "Second search" }));
+    expect(
+      first.queryByRole("textbox", { name: "Notes for acme/widgets#42" }),
+    ).toBeNull();
+    await act(async () => {
+      first
+        .getByRole("button", { name: "Show notes for acme/widgets#42" })
+        .click();
+      second
+        .getByRole("button", { name: "Show notes for acme/widgets#42" })
+        .click();
+    });
+    await act(async () =>
+      fireEvent.change(
+        first.getByRole("textbox", { name: "Notes for acme/widgets#42" }),
+        { target: { value: "Check edge cases before reviewing." } },
+      ),
+    );
+    expect(
+      (
+        second.getByRole("textbox", {
+          name: "Notes for acme/widgets#42",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe("Check edge cases before reviewing.");
+    expect(
+      window.localStorage.getItem(itemNoteKey("pr", "acme/widgets", 42)),
+    ).toBe("Check edge cases before reviewing.");
+    expect(slot.navigateCalls).toEqual([]);
+    await act(async () =>
+      first
+        .getByRole("button", { name: "Hide notes for acme/widgets#42" })
+        .click(),
+    );
+    expect(
+      first.queryByRole("textbox", { name: "Notes for acme/widgets#42" }),
+    ).toBeNull();
+    slot.lifecycle.unmount();
+
+    const reopened = mount();
+    await act(async () => {});
+    const restored = within(
+      reopened.getByRole("region", { name: "First search" }),
+    );
+    await act(async () =>
+      restored
+        .getByRole("button", { name: "Show notes for acme/widgets#42" })
+        .click(),
+    );
+    expect(
+      (
+        restored.getByRole("textbox", {
+          name: "Notes for acme/widgets#42",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe("Check edge cases before reviewing.");
+    await act(async () =>
+      fireEvent.change(
+        restored.getByRole("textbox", { name: "Notes for acme/widgets#42" }),
+        { target: { value: "" } },
+      ),
+    );
+    expect(
+      window.localStorage.getItem(itemNoteKey("pr", "acme/widgets", 42)),
+    ).toBeNull();
+    reopened.lifecycle.unmount();
+  });
 });
 
 describe("GitHub table controls", () => {

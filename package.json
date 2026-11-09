@@ -25,7 +25,8 @@
     "tsconfig.json",
     "README.md",
     "LICENSE",
-    "table-layout.ts"
+    "table-layout.ts",
+    "item-notes.ts"
   ],
   "engines": {
     "bb": ">=0.48.1",
