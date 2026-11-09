@@ -3,12 +3,157 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { fireEvent, within } from "@testing-library/dom";
+import { panelCache } from "./panel-cache";
 import { SEARCHES_KEY } from "./saved-searches.js";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 
 const app = await loadPluginApp(() => import("./app"));
 
-beforeEach(() => window.localStorage.clear());
+beforeEach(() => {
+  window.localStorage.clear();
+  for (const cache of Object.values(panelCache)) cache.clear();
+});
+
+describe("GitHub cached navigation", () => {
+  const item = {
+    repo: "acme/widgets",
+    number: 42,
+    kind: "pr" as const,
+    title: "Cached pull request",
+    state: "OPEN",
+    author: "octocat",
+    labels: [],
+    assignees: [],
+    url: "https://github.com/acme/widgets/pull/42",
+    body: "",
+    updatedAt: "2026-08-20T00:00:00.000Z",
+  };
+  const status = {
+    ghOk: true,
+    ghState: "ready" as const,
+    ghError: null,
+    repos: [{ repo: "acme/widgets", projectId: null }],
+    lastSyncedAt: null,
+  };
+
+  it("renders cached rows immediately on return while revalidating and automatically syncing", async () => {
+    const first = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "pulls" },
+      {
+        rpc: {
+          status: () => status,
+          listItems: () => ({ items: [item] }),
+          listLinks: () => ({ links: {} }),
+          viewer: () => ({ login: "octocat" }),
+          refresh: () => ({ repos: 1, items: 1 }),
+        },
+      },
+    );
+    await first.findByText("Cached pull request");
+    await act(async () => {});
+    first.lifecycle.unmount();
+
+    let finishRead!: (value: { items: (typeof item)[] }) => void;
+    let finishSync!: (value: { repos: number; items: number }) => void;
+    const read = new Promise<{ items: (typeof item)[] }>((resolve) => {
+      finishRead = resolve;
+    });
+    const sync = new Promise<{ repos: number; items: number }>((resolve) => {
+      finishSync = resolve;
+    });
+    const refresh = vi.fn(() => sync);
+    const reopened = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "" },
+      {
+        rpc: {
+          status: () => status,
+          listItems: () => read,
+          listLinks: () => ({ links: {} }),
+          refresh,
+        },
+      },
+    );
+    expect(reopened.getByText("Cached pull request")).toBeTruthy();
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishRead({ items: [{ ...item, title: "Updated pull request" }] });
+      finishSync({ repos: 1, items: 1 });
+    });
+    expect(reopened.getByText("Updated pull request")).toBeTruthy();
+    expect(reopened.queryByText("Cached pull request")).toBeNull();
+    reopened.lifecycle.unmount();
+  });
+
+  it("keeps cached rows visible when the revalidation fails", async () => {
+    await panelCache.pulls.refresh(async () => [item]);
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "pulls" },
+      {
+        rpc: {
+          status: () => status,
+          listItems: () => {
+            throw new Error("offline");
+          },
+          refresh: () => {
+            throw new Error("offline");
+          },
+          listLinks: () => ({ links: {} }),
+          viewer: () => ({ login: "octocat" }),
+        },
+      },
+    );
+    await act(async () => {});
+    expect(slot.getByText("Cached pull request")).toBeTruthy();
+    expect(slot.getByText(/Showing cached results/)).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("uses the existing header button to sync and reports progress until it completes", async () => {
+    let finish!: (value: { repos: number; items: number }) => void;
+    const refresh = vi.fn(
+      () =>
+        new Promise<{ repos: number; items: number }>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const slot = renderSlot(
+      { component: app.navPanels[0]!.headerContent! },
+      { subPath: "" },
+      {
+        rpc: {
+          status: () => status,
+          listItems: () => ({ items: [item] }),
+          listLinks: () => ({ links: {} }),
+          refresh,
+        },
+      },
+    );
+    await act(async () =>
+      slot.getByRole("button", { name: "Refresh GitHub data" }).click(),
+    );
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        slot.getByRole("button", {
+          name: "Syncing GitHub data",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    await act(async () => finish({ repos: 1, items: 1 }));
+    expect(
+      (
+        slot.getByRole("button", {
+          name: "Refresh GitHub data",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    slot.lifecycle.unmount();
+  });
+});
 
 describe("GitHub tab persistence", () => {
   const key = "bb-plugin-github-fred:tab";

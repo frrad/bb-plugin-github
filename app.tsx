@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   definePluginApp,
   Markdown,
@@ -48,6 +55,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { panelCache } from "./panel-cache.js";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
 import {
@@ -106,40 +114,36 @@ function useItems(kind: "issue" | "pr"): {
   error: string | null;
 } {
   const rpc = useRpc<typeof githubRpcContract>();
-  const [state, setState] = useState<{
-    items: Item[] | null;
-    error: string | null;
-  }>({
-    items: null,
-    error: null,
-  });
-  const refetch = useCallback(() => {
-    rpc.call("listItems", { kind }).then(
-      (result) => setState({ items: result.items, error: null }),
-      (error: unknown) => setState({ items: null, error: errorText(error) }),
-    );
-  }, [rpc, kind]);
+  const cache = kind === "issue" ? panelCache.issues : panelCache.pulls;
+  const state = useSyncExternalStore(cache.subscribe, cache.getSnapshot);
+  const load = useCallback(
+    () => rpc.call("listItems", { kind }).then((result) => result.items),
+    [rpc, kind],
+  );
   useEffect(() => {
-    refetch();
-  }, [refetch]);
-  useRealtime("data-changed", refetch);
-  return state;
+    void cache.refresh(load);
+  }, [cache, load]);
+  useRealtime("data-changed", () => {
+    void cache.refresh(load, true);
+  });
+  return { items: state.data, error: state.error };
 }
 
 function useLinks(): LinksMap {
   const rpc = useRpc<typeof githubRpcContract>();
-  const [links, setLinks] = useState<LinksMap>({});
-  const refetch = useCallback(() => {
-    rpc.call("listLinks").then(
-      (result) => setLinks(result.links),
-      () => {},
-    );
-  }, [rpc]);
+  const cache = panelCache.links;
+  const state = useSyncExternalStore(cache.subscribe, cache.getSnapshot);
+  const load = useCallback(
+    () => rpc.call("listLinks").then((result) => result.links),
+    [rpc],
+  );
   useEffect(() => {
-    refetch();
-  }, [refetch]);
-  useRealtime("links-changed", refetch);
-  return links;
+    void cache.refresh(load);
+  }, [cache, load]);
+  useRealtime("links-changed", () => {
+    void cache.refresh(load, true);
+  });
+  return state.data ?? {};
 }
 
 function useSpawn(): {
@@ -169,22 +173,15 @@ function useSpawn(): {
   return { spawn, spawningKey };
 }
 
-let viewerLogin: string | null = null;
-
 function useViewer(): string | null {
   const rpc = useRpc<typeof githubRpcContract>();
-  const [login, setLogin] = useState<string | null>(viewerLogin);
+  const cache = panelCache.viewer;
+  const state = useSyncExternalStore(cache.subscribe, cache.getSnapshot);
   useEffect(() => {
-    if (viewerLogin !== null) return;
-    rpc.call("viewer").then(
-      (result) => {
-        viewerLogin = result.login;
-        setLogin(result.login);
-      },
-      () => {},
-    );
-  }, [rpc]);
-  return login;
+    if (cache.getSnapshot().data !== null) return;
+    void cache.refresh(() => rpc.call("viewer").then((result) => result.login));
+  }, [cache, rpc]);
+  return state.data;
 }
 
 function Avatar({
@@ -822,7 +819,7 @@ function ItemsTable({
   const links = useLinks();
 
   let body: React.ReactNode;
-  if (error !== null) {
+  if (error !== null && items === null) {
     body = <EmptyState message={error} />;
   } else if (items === null) {
     body = <TableSkeleton kind={kind} />;
@@ -861,6 +858,11 @@ function ItemsTable({
         <span className={COL.updated}>Updated</span>
         <span className={`${COL.actions} ${actionWidth(kind)}`} />
       </div>
+      {error !== null && items !== null ? (
+        <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
+          Showing cached results. Could not refresh: {error}
+        </p>
+      ) : null}
       {body}
     </div>
   );
@@ -2019,35 +2021,62 @@ function NewIssueForm({
   );
 }
 
-function useStatus(): { status: Status | null; refetch: () => void } {
+function useStatus(): { status: Status | null } {
   const rpc = useRpc<typeof githubRpcContract>();
-  const [status, setStatus] = useState<Status | null>(null);
-  const refetch = useCallback(() => {
-    rpc.call("status").then(
-      (result) => setStatus(result),
-      () => {},
-    );
-  }, [rpc]);
+  const cache = panelCache.status;
+  const state = useSyncExternalStore(cache.subscribe, cache.getSnapshot);
+  const load = useCallback(() => rpc.call("status"), [rpc]);
   useEffect(() => {
-    refetch();
-  }, [refetch]);
-  useRealtime("data-changed", refetch);
-  return { status, refetch };
+    void cache.refresh(load);
+  }, [cache, load]);
+  useRealtime("data-changed", () => {
+    void cache.refresh(load, true);
+  });
+  return { status: state.data };
+}
+
+function useRefresh() {
+  const rpc = useRpc<typeof githubRpcContract>();
+  const state = useSyncExternalStore(
+    panelCache.sync.subscribe,
+    panelCache.sync.getSnapshot,
+  );
+  const refresh = useCallback(
+    () =>
+      panelCache.sync.refresh(async () => {
+        await rpc.call("refresh");
+        // Also reconcile directly, in case the realtime sync signal was missed.
+        await Promise.all([
+          panelCache.issues.refresh(
+            () =>
+              rpc
+                .call("listItems", { kind: "issue" })
+                .then((result) => result.items),
+            true,
+          ),
+          panelCache.pulls.refresh(
+            () =>
+              rpc
+                .call("listItems", { kind: "pr" })
+                .then((result) => result.items),
+            true,
+          ),
+          panelCache.status.refresh(() => rpc.call("status"), true),
+          panelCache.links.refresh(
+            () => rpc.call("listLinks").then((result) => result.links),
+            true,
+          ),
+        ]);
+        return true;
+      }),
+    [rpc],
+  );
+  return { refresh, syncing: state.refreshing, failed: state.error !== null };
 }
 
 function PanelHeader() {
-  const rpc = useRpc<typeof githubRpcContract>();
   const { status } = useStatus();
-  const [syncing, setSyncing] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const refresh = useCallback(() => {
-    setSyncing(true);
-    setFailed(false);
-    rpc
-      .call("refresh")
-      .catch(() => setFailed(true))
-      .finally(() => setSyncing(false));
-  }, [rpc]);
+  const { refresh, syncing, failed } = useRefresh();
   return (
     <>
       <span className="hidden text-xs text-muted-foreground @min-[40rem]/page-header:inline">
@@ -2090,6 +2119,10 @@ const DEFAULT_QUERY = "is:open ";
 function GithubPanel({ subPath }: PluginNavPanelProps) {
   const [route, navigate] = useSubPathRoute(subPath);
   const { status } = useStatus();
+  const { refresh } = useRefresh();
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
   const [searches, setSearches] = useState<SavedSearch[]>(() => {
     let query = DEFAULT_QUERY;
     let kind: SavedSearch["kind"] = "issue";

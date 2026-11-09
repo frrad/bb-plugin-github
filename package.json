@@ -19,6 +19,7 @@
     "app.tsx",
     "app-logic.ts",
     "saved-searches.ts",
+    "panel-cache.ts",
     "components",
     "lib",
     "tsconfig.json",

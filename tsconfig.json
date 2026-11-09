@@ -30,6 +30,7 @@
     "testing",
     "app-logic.ts",
     "lib",
-    "saved-searches.ts"
+    "saved-searches.ts",
+    "panel-cache.ts"
   ]
 }
