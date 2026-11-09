@@ -2308,6 +2308,13 @@ function SearchSection({
         >
           <Icon name={search.collapsed ? "ChevronRight" : "ChevronDown"} />
         </Button>
+        <Input
+          aria-label="Search name"
+          value={search.name}
+          placeholder="Search name"
+          className="h-8 min-w-0 flex-1 border-transparent font-medium shadow-none hover:border-input @min-[48rem]/search-section:w-40 @min-[48rem]/search-section:flex-none"
+          onChange={(event) => onChange({ name: event.target.value })}
+        />
         <select
           aria-label="Search type"
           value={search.kind}
@@ -2319,13 +2326,6 @@ function SearchSection({
           <option value="issue">Issues</option>
           <option value="pr">Pull requests</option>
         </select>
-        <Input
-          aria-label="Search name"
-          value={search.name}
-          placeholder="Search name"
-          className="h-8 min-w-0 flex-1 border-transparent font-medium shadow-none hover:border-input @min-[48rem]/search-section:w-40 @min-[48rem]/search-section:flex-none"
-          onChange={(event) => onChange({ name: event.target.value })}
-        />
         <div className="order-last min-w-0 basis-full @min-[48rem]/search-section:order-none @min-[48rem]/search-section:flex-1 @min-[48rem]/search-section:basis-64">
           <FilterBar
             value={search.query}
