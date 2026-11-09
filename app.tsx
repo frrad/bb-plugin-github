@@ -50,6 +50,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "./components/empty-state.js";
+import { Icon } from "@/components/ui/icon";
 
 type IssueDetail = PluginRpcResult<
   (typeof githubRpcContract)["getIssue"]
@@ -80,11 +81,36 @@ function relativeTime(iso: string): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-const PANEL_PATH = "github";
+const PANEL_PATH = "github-fred";
+const TAB_KEY = "bb-plugin-github-fred:tab";
 
 function useSubPathRoute(subPath: string): [Route, (route: Route) => void] {
   const bbNavigate = useBbNavigate();
-  const route = useMemo(() => parseSubPath(subPath), [subPath]);
+  const [lastTab, setLastTab] = useState<"issues" | "pulls">(() => {
+    try {
+      return window.localStorage.getItem(TAB_KEY) === "pulls"
+        ? "pulls"
+        : "issues";
+    } catch {
+      return "issues";
+    }
+  });
+  const route = useMemo(
+    () => parseSubPath(subPath || lastTab),
+    [subPath, lastTab],
+  );
+  const tab = route.view === "pulls" || route.view === "pull" ? "pulls" : "issues";
+  useEffect(() => {
+    setLastTab(tab);
+    try {
+      window.localStorage.setItem(TAB_KEY, tab);
+    } catch {}
+  }, [tab]);
+  useEffect(() => {
+    if (subPath.length === 0) {
+      bbNavigate.toPluginPanel(PANEL_PATH, { subPath: tab, replace: true });
+    }
+  }, [bbNavigate, subPath, tab]);
   const navigate = useCallback(
     (next: Route) => {
       bbNavigate.toPluginPanel(PANEL_PATH, { subPath: routeToSubPath(next) });
@@ -498,8 +524,12 @@ const COL = {
   status: "shrink-0 @[48rem]:w-24",
   updated: "hidden w-14 shrink-0 text-right @[48rem]:block",
   actions:
-    "ml-auto flex shrink-0 items-center justify-end gap-1 @[48rem]:ml-0 @[48rem]:w-24",
+    "ml-auto flex shrink-0 items-center justify-end gap-1 @[48rem]:ml-0",
 } as const;
+
+function actionWidth(kind: "issue" | "pr") {
+  return kind === "pr" ? "@[48rem]:w-48" : "@[48rem]:w-24";
+}
 
 function AssigneeCell({ assignees }: { assignees: string[] }) {
   if (assignees.length === 0) {
@@ -688,7 +718,7 @@ function ItemRow({
         >
           {relativeTime(item.updatedAt)}
         </span>
-        <span className={`${COL.actions} @[48rem]:order-6`}>
+        <span className={`${COL.actions} ${actionWidth(item.kind)} @[48rem]:order-6`}>
           <Button
             size="sm"
             variant="outline"
@@ -705,14 +735,45 @@ function ItemRow({
           >
             {busy ? "…" : item.kind === "issue" ? "Start" : "Review"}
           </Button>
-          <RowMenu item={item} />
+          {item.kind === "pr" ? (
+            <>
+              <Button size="sm" variant="outline" className="h-7" asChild>
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open on GitHub in your browser"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  GitHub
+                </a>
+              </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                className="size-7"
+                aria-label="Copy GitHub link"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void experimental_copyToClipboard({ text: item.url }).then(
+                    (copied) => {
+                      if (copied) toast.success("Link copied");
+                      else toast.error("Could not copy the link");
+                    },
+                  );
+                }}
+              >
+                <Icon name="Link" className="size-3.5" />
+              </Button>
+            </>
+          ) : <RowMenu item={item} />}
         </span>
       </span>
     </div>
   );
 }
 
-function TableSkeleton() {
+function TableSkeleton({ kind }: { kind: "issue" | "pr" }) {
   return (
     <DelayedLoading>
       <div className="divide-y divide-border">
@@ -735,7 +796,7 @@ function TableSkeleton() {
               <span className={`${COL.updated} @[48rem]:order-5`}>
                 <Skeleton className="ml-auto h-3 w-12" />
               </span>
-              <span className={`${COL.actions} @[48rem]:order-6`}>
+              <span className={`${COL.actions} ${actionWidth(kind)} @[48rem]:order-6`}>
                 <Skeleton className="h-7 w-20" />
               </span>
             </span>
@@ -777,7 +838,7 @@ function ItemsTable({
   if (error !== null) {
     body = <EmptyState message={error} />;
   } else if (items === null) {
-    body = <TableSkeleton />;
+    body = <TableSkeleton kind={kind} />;
   } else if (items.length === 0) {
     body = (
       <EmptyState
@@ -811,7 +872,7 @@ function ItemsTable({
         <span className={COL.assignee}>Assignee</span>
         <span className={COL.status}>Status</span>
         <span className={COL.updated}>Updated</span>
-        <span className={COL.actions} />
+        <span className={`${COL.actions} ${actionWidth(kind)}`} />
       </div>
       {body}
     </div>
@@ -2036,7 +2097,7 @@ function PanelHeader() {
   );
 }
 
-const QUERY_KEY = "bb-plugin-github:query";
+const QUERY_KEY = "bb-plugin-github-fred:query";
 const DEFAULT_QUERY = "is:open ";
 
 function GithubPanel({ subPath }: PluginNavPanelProps) {
@@ -2229,10 +2290,10 @@ function GithubPanelBody({
 
 export default definePluginApp((app) => {
   app.slots.navPanel({
-    id: "github",
-    title: "GitHub",
+    id: "github-fred",
+    title: "GitHub Fred",
     icon: "Github",
-    path: "github",
+    path: "github-fred",
     component: GithubPanel,
     headerContent: PanelHeader,
   });
@@ -2240,7 +2301,7 @@ export default definePluginApp((app) => {
     context: { kind: "thread" },
     availability: "action",
     id: "pull",
-    title: "GitHub PR",
+    title: "GitHub Fred PR",
     icon: "Github",
     component: PullPanelTab,
   });

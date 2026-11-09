@@ -87,7 +87,7 @@ async function loadWithSyncServiceOnce(
   options: { settings?: Record<string, string> } = {},
 ) {
   const { bb, harness } = createFakePluginHost({
-    pluginId: "github",
+    pluginId: "github-fred",
     settings: options.settings,
   });
   await plugin(bb);

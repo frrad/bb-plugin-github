@@ -23,7 +23,7 @@ const CLOSED_PR_PAGE = 30;
 
 const GH_HINT =
   "Install the GitHub CLI (https://cli.github.com) and run `gh auth login`, " +
-  "then `bb plugin reload github`.";
+  "then `bb plugin reload github-fred`.";
 
 const repoNameSchema = z.string().regex(/^[\w.-]+\/[\w.-]+$/);
 const itemNumberSchema = z.number().int().positive();
@@ -1681,7 +1681,7 @@ export default async function plugin(bb: BbPluginApi) {
           ? "List cached open pull requests"
           : "List cached open issues",
       description:
-        "Reads the local cache only; run `bb github sync` to refresh it from GitHub.",
+        "Reads the local cache only; run `bb github-fred sync` to refresh it from GitHub.",
       positionals: [
         {
           name: "repo",
@@ -1715,7 +1715,7 @@ export default async function plugin(bb: BbPluginApi) {
           if (items.length === 0) {
             return {
               exitCode: 0,
-              stdout: "Nothing cached. Run `bb github sync` first.",
+              stdout: "Nothing cached. Run `bb github-fred sync` first.",
             };
           }
           return {
@@ -1734,7 +1734,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.cli.register(
     defineCli({
-      name: "github",
+      name: "github-fred",
       summary: "Browse tracked GitHub repos, issues, and PRs",
       description:
         "Tracked repositories come from attached projects' GitHub remotes plus the extraRepos setting.",

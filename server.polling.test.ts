@@ -61,7 +61,7 @@ afterEach(async () => {
 
 async function start(count: number) {
   const host = createFakePluginHost({
-    pluginId: "github",
+    pluginId: "github-fred",
     settings: {
       extraRepos: Array.from(
         { length: count },

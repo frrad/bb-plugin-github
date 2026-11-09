@@ -63,7 +63,7 @@ afterEach(async () => {
 });
 async function start(repos = "acme/one") {
   const host = createFakePluginHost({
-    pluginId: "github",
+    pluginId: "github-fred",
     settings: { extraRepos: repos },
     sdk: { projects: { list: async () => [] } },
   });

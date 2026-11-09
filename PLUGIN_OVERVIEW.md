@@ -13,7 +13,7 @@ The plugin tracks every bb project whose checkout has a GitHub `origin` remote. 
 
 ## For agents
 
-The `bb github` command lists cached data. Use `bb github repos`, `bb github issues [owner/repo]`, `bb github prs [owner/repo]`, or `bb github sync`. Every command accepts `--json`, and `bb github --help` or `bb github <command> --help` prints the arguments and options and exits 0.
+The `bb github-fred` command lists cached data. Use `bb github-fred repos`, `bb github-fred issues [owner/repo]`, `bb github-fred prs [owner/repo]`, or `bb github-fred sync`. Every command accepts `--json`, and `bb github-fred --help` or `bb github-fred <command> --help` prints the arguments and options and exits 0.
 
 ## Requirements
 

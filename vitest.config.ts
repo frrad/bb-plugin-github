@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     silent: "passed-only",
     testTimeout: 15_000,
-    name: "bb-plugin-github",
+    name: "bb-plugin-github-fred",
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules/**"],
   },

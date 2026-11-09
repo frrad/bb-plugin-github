@@ -206,7 +206,7 @@ afterEach(() => {
 
 async function loadPlugin(extraRepos = "acme/widgets") {
   const host = createFakePluginHost({
-    pluginId: "github",
+    pluginId: "github-fred",
     settings: { extraRepos },
   });
   await plugin(host.bb);
@@ -283,8 +283,8 @@ describe("github plugin RPC behavior", () => {
 
     const help = await harness.runCli(["--help"]);
     expect(help.exitCode).toBe(0);
-    expect(help.stdout).toContain("bb github issues");
-    expect(help.stdout).toContain("bb github sync");
+    expect(help.stdout).toContain("bb github-fred issues");
+    expect(help.stdout).toContain("bb github-fred sync");
   });
 
   it("rejects a malformed repository or item number when starting work", async () => {
