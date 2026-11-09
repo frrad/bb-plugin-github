@@ -69,6 +69,7 @@ import {
 import { panelCache, isSyncStale } from "./panel-cache.js";
 import { itemNoteKey, itemNotes, type NotesTransport } from "./item-notes.js";
 import { normalizeSlackLink } from "./slack-link.js";
+import { SlackLogo } from "./components/slack-logo.js";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
 import {
@@ -699,6 +700,7 @@ function SlackLinkField({ item }: { item: Item }) {
   const [url, setUrl] = useState(stored ?? "");
   const [confirmed, setConfirmed] = useState(stored);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dirty = useRef(false);
   const id = useId();
@@ -737,70 +739,137 @@ function SlackLinkField({ item }: { item: Item }) {
       setUrl(result.url ?? "");
       setConfirmed(result.url);
       dirty.current = false;
+      setEditing(false);
     } catch (error) {
       setError(errorText(error));
     } finally {
       setSaving(false);
     }
   };
+  let workspace = "Linked discussion";
+  if (confirmed) {
+    try {
+      workspace = new URL(confirmed).hostname;
+    } catch {}
+  }
   return (
     <form
-      className="space-y-2 border-t border-border pt-3"
+      className="overflow-hidden rounded-xl border border-border bg-background/70 shadow-sm"
       onSubmit={(event) => {
         event.preventDefault();
         void save(url);
       }}
     >
-      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
-        Slack thread
-      </label>
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          id={id}
-          aria-label={`Slack thread link for ${item.repo}#${item.number}`}
-          type="url"
-          value={url}
-          maxLength={2048}
-          disabled={saving}
-          placeholder="Paste a Slack message link…"
-          className="min-w-48 flex-1"
-          onChange={(event) => {
-            dirty.current = true;
-            setUrl(event.target.value);
-            setError(null);
-          }}
-        />
-        <Button
-          type="submit"
-          size="sm"
-          variant="outline"
-          disabled={saving || url.trim() === (confirmed ?? "")}
-        >
-          {saving ? "Saving…" : "Save link"}
-        </Button>
+      <div className="flex flex-wrap items-center gap-3 bg-muted/20 px-3 py-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-black/5 bg-white shadow-sm">
+          <SlackLogo className="size-6" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-foreground">Slack thread</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {confirmed
+              ? workspace
+              : `Link the conversation behind this ${item.kind === "pr" ? "PR" : "issue"}.`}
+          </p>
+        </div>
         {confirmed ? (
-          <>
-            <Button size="sm" variant="outline" asChild>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 bg-background"
+              asChild
+            >
               <a href={confirmed} target="_blank" rel="noopener noreferrer">
-                Open in Slack ↗
+                Open in Slack <Icon name="ArrowUpRight" />
               </a>
             </Button>
             <Button
               type="button"
-              size="sm"
+              size="icon"
               variant="ghost"
+              className="size-8 text-muted-foreground"
+              aria-label="Edit link"
+              disabled={saving}
+              onClick={() => setEditing((value) => !value)}
+            >
+              <Icon name="Pencil" />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-8 text-muted-foreground hover:text-destructive"
+              aria-label="Remove link"
               disabled={saving}
               onClick={() => {
                 void save("");
               }}
             >
-              Remove link
+              <Icon name="X" />
             </Button>
-          </>
+          </div>
         ) : null}
       </div>
+      {!confirmed || editing ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/60 p-3">
+          <div className="relative min-w-48 flex-1">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+              <Icon name="Link" className="size-4" />
+            </span>
+            <Input
+              id={id}
+              aria-label={`Slack thread link for ${item.repo}#${item.number}`}
+              type="url"
+              value={url}
+              maxLength={2048}
+              disabled={saving}
+              autoFocus={editing}
+              placeholder="Paste a Slack message link…"
+              className="h-9 bg-muted/20 pl-9 text-sm shadow-none"
+              onChange={(event) => {
+                dirty.current = true;
+                setUrl(event.target.value);
+                setError(null);
+              }}
+            />
+          </div>
+          <Button
+            type="submit"
+            size="sm"
+            className="h-9 gap-1.5"
+            disabled={saving || url.trim() === (confirmed ?? "")}
+          >
+            <Icon
+              name={saving ? "LoaderCircle" : "Link"}
+              className={saving ? "animate-spin" : undefined}
+            />
+            {saving ? "Saving…" : "Save link"}
+          </Button>
+          {confirmed ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                const latest = state.data === null ? confirmed : stored;
+                dirty.current = false;
+                setUrl(latest ?? "");
+                setConfirmed(latest);
+                setEditing(false);
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {error || state.error ? (
-        <p role="alert" className="text-xs text-destructive">
+        <p
+          role="alert"
+          className="border-t border-border/60 px-3 py-2 text-xs text-destructive"
+        >
           {error ?? state.error}
         </p>
       ) : null}

@@ -245,13 +245,28 @@ describe("Slack reference field", () => {
     );
     expect(saved).toBe(url);
     expect(
-      slot.getByRole("link", { name: "Open in Slack ↗" }).getAttribute("href"),
+      slot.getByRole("link", { name: "Open in Slack" }).getAttribute("href"),
     ).toBe(url);
     expect(
-      slot
-        .getByRole("link", { name: "Open in Slack ↗" })
-        .getAttribute("target"),
+      slot.getByRole("link", { name: "Open in Slack" }).getAttribute("target"),
     ).toBe("_blank");
+    expect(
+      slot.queryByRole("textbox", {
+        name: "Slack thread link for acme/widgets#42",
+      }),
+    ).toBeNull();
+    await act(async () =>
+      slot.getByRole("button", { name: "Edit link" }).click(),
+    );
+    expect(
+      (
+        slot.getByRole("textbox", {
+          name: "Slack thread link for acme/widgets#42",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe(url);
+    await act(async () => slot.getByRole("button", { name: "Cancel" }).click());
+    expect(saved).toBe(url);
     slot.lifecycle.unmount();
     panelCache.slackLinks.clear();
     const reopened = mount();
@@ -260,14 +275,12 @@ describe("Slack reference field", () => {
         .getByRole("button", { name: "Show notes for acme/widgets#42" })
         .click(),
     );
-    await reopened.findByRole("link", { name: "Open in Slack ↗" });
+    await reopened.findByRole("link", { name: "Open in Slack" });
     await act(async () =>
       reopened.getByRole("button", { name: "Remove link" }).click(),
     );
     expect(saved).toBeNull();
-    expect(
-      reopened.queryByRole("link", { name: "Open in Slack ↗" }),
-    ).toBeNull();
+    expect(reopened.queryByRole("link", { name: "Open in Slack" })).toBeNull();
     reopened.lifecycle.unmount();
   });
 });
