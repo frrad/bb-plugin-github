@@ -33,6 +33,7 @@
     "saved-searches.ts",
     "panel-cache.ts",
     "table-layout.ts",
-    "item-notes.ts"
+    "item-notes.ts",
+    "slack-link.ts"
   ]
 }

@@ -57,6 +57,7 @@ describe("item notes", () => {
         { subPath: "" },
         {
           rpc: {
+            listSlackLinks: () => ({ links: [] }),
             listNotes: () => ({ notes: [...serverNotes.values()] }),
             saveNote: (raw: unknown) => {
               const input = raw as ServerNote;
@@ -173,6 +174,100 @@ describe("item notes", () => {
     expect(serverNotes.get(itemNoteKey("pr", "acme/widgets", 42))?.body).toBe(
       "",
     );
+    reopened.lifecycle.unmount();
+  });
+});
+
+describe("Slack reference field", () => {
+  it("saves a Slack link on the server, opens it externally, and can remove it", async () => {
+    const url = "https://example.slack.com/archives/C12345/p1700000000123456";
+    let saved: string | null = null;
+    const identity = { kind: "pr", repo: "acme/widgets", number: 42 };
+    const mount = () =>
+      renderSlot(
+        app.navPanels[0]!,
+        { subPath: "pulls" },
+        {
+          rpc: {
+            status: () => ({
+              ghOk: true,
+              ghState: "ready",
+              ghError: null,
+              repos: [{ repo: "acme/widgets", projectId: null }],
+              lastSyncedAt: new Date().toISOString(),
+            }),
+            listItems: () => ({
+              items: [
+                {
+                  ...identity,
+                  title: "A PR with a discussion",
+                  state: "OPEN",
+                  author: "octocat",
+                  labels: [],
+                  assignees: [],
+                  body: "",
+                  url: "https://github.com/acme/widgets/pull/42",
+                  updatedAt: "2026-01-01T00:00:00Z",
+                },
+              ],
+            }),
+            listLinks: () => ({ links: {} }),
+            viewer: () => ({ login: "octocat" }),
+            listNotes: () => ({ notes: [] }),
+            listSlackLinks: () => ({
+              links: saved ? [{ ...identity, url: saved }] : [],
+            }),
+            saveSlackLink: (raw: unknown) => {
+              const input = raw as { url: string };
+              saved = input.url || null;
+              return { url: saved };
+            },
+          },
+        },
+      );
+    const slot = mount();
+    await slot.findByText("A PR with a discussion");
+    await act(async () =>
+      slot
+        .getByRole("button", { name: "Show notes for acme/widgets#42" })
+        .click(),
+    );
+    await act(async () =>
+      fireEvent.change(
+        slot.getByRole("textbox", {
+          name: "Slack thread link for acme/widgets#42",
+        }),
+        { target: { value: url } },
+      ),
+    );
+    await act(async () =>
+      slot.getByRole("button", { name: "Save link" }).click(),
+    );
+    expect(saved).toBe(url);
+    expect(
+      slot.getByRole("link", { name: "Open in Slack ↗" }).getAttribute("href"),
+    ).toBe(url);
+    expect(
+      slot
+        .getByRole("link", { name: "Open in Slack ↗" })
+        .getAttribute("target"),
+    ).toBe("_blank");
+    slot.lifecycle.unmount();
+    panelCache.slackLinks.clear();
+    const reopened = mount();
+    await act(async () =>
+      reopened
+        .getByRole("button", { name: "Show notes for acme/widgets#42" })
+        .click(),
+    );
+    await reopened.findByRole("link", { name: "Open in Slack ↗" });
+    await act(async () =>
+      reopened.getByRole("button", { name: "Remove link" }).click(),
+    );
+    expect(saved).toBeNull();
+    expect(
+      reopened.queryByRole("link", { name: "Open in Slack ↗" }),
+    ).toBeNull();
     reopened.lifecycle.unmount();
   });
 });

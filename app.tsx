@@ -68,6 +68,7 @@ import {
 } from "./table-layout.js";
 import { panelCache, isSyncStale } from "./panel-cache.js";
 import { itemNoteKey, itemNotes, type NotesTransport } from "./item-notes.js";
+import { normalizeSlackLink } from "./slack-link.js";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
 import {
@@ -680,6 +681,133 @@ function useNotesTransport(): NotesTransport {
   );
 }
 
+function SlackLinkField({ item }: { item: Item }) {
+  const rpc = useRpc<typeof githubRpcContract>();
+  const cache = panelCache.slackLinks;
+  const state = useSyncExternalStore(cache.subscribe, cache.getSnapshot);
+  const load = useCallback(
+    () => rpc.call("listSlackLinks").then((result) => result.links),
+    [rpc],
+  );
+  const stored =
+    state.data?.find(
+      (link) =>
+        link.kind === item.kind &&
+        link.repo === item.repo &&
+        link.number === item.number,
+    )?.url ?? null;
+  const [url, setUrl] = useState(stored ?? "");
+  const [confirmed, setConfirmed] = useState(stored);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const dirty = useRef(false);
+  const id = useId();
+  useEffect(() => {
+    void cache.refresh(load);
+  }, [cache, load]);
+  useRealtime("slack-links-changed", () => {
+    void cache.refresh(load, true);
+  });
+  useEffect(() => {
+    if (!dirty.current) {
+      setUrl(stored ?? "");
+      setConfirmed(stored);
+    }
+  }, [stored]);
+  const save = async (value: string) => {
+    if (saving) return;
+    let normalized: string | null;
+    try {
+      normalized = normalizeSlackLink(value);
+    } catch (error) {
+      setError(errorText(error));
+      return;
+    }
+    dirty.current = true;
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await rpc.call("saveSlackLink", {
+        kind: item.kind,
+        repo: item.repo,
+        number: item.number,
+        url: normalized ?? "",
+      });
+      await cache.refresh(load, true);
+      setUrl(result.url ?? "");
+      setConfirmed(result.url);
+      dirty.current = false;
+    } catch (error) {
+      setError(errorText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <form
+      className="space-y-2 border-t border-border pt-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save(url);
+      }}
+    >
+      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+        Slack thread
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          id={id}
+          aria-label={`Slack thread link for ${item.repo}#${item.number}`}
+          type="url"
+          value={url}
+          maxLength={2048}
+          disabled={saving}
+          placeholder="Paste a Slack message link…"
+          className="min-w-48 flex-1"
+          onChange={(event) => {
+            dirty.current = true;
+            setUrl(event.target.value);
+            setError(null);
+          }}
+        />
+        <Button
+          type="submit"
+          size="sm"
+          variant="outline"
+          disabled={saving || url.trim() === (confirmed ?? "")}
+        >
+          {saving ? "Saving…" : "Save link"}
+        </Button>
+        {confirmed ? (
+          <>
+            <Button size="sm" variant="outline" asChild>
+              <a href={confirmed} target="_blank" rel="noopener noreferrer">
+                Open in Slack ↗
+              </a>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={saving}
+              onClick={() => {
+                void save("");
+              }}
+            >
+              Remove link
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {error || state.error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {error ?? state.error}
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
 function ItemRow({
   item,
   links,
@@ -927,6 +1055,7 @@ function ItemRow({
                 </Button>
               </div>
             ) : null}
+            <SlackLinkField item={item} />
           </div>
         </div>
       ) : null}

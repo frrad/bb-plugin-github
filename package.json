@@ -26,7 +26,8 @@
     "README.md",
     "LICENSE",
     "table-layout.ts",
-    "item-notes.ts"
+    "item-notes.ts",
+    "slack-link.ts"
   ],
   "engines": {
     "bb": ">=0.48.1",

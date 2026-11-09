@@ -60,6 +60,10 @@ export function createReadCache<T>() {
 }
 
 export const panelCache = {
+  slackLinks:
+    createReadCache<
+      PluginRpcResult<(typeof githubRpcContract)["listSlackLinks"]>["links"]
+    >(),
   issues: createReadCache<Item[]>(),
   pulls: createReadCache<Item[]>(),
   links:

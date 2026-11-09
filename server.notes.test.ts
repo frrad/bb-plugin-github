@@ -105,3 +105,49 @@ describe("note RPC persistence", () => {
     expect(listed.notes).toHaveLength(4);
   });
 });
+
+describe("Slack link persistence", () => {
+  const url = "https://example.slack.com/archives/C12345/p1700000000123456";
+  it("saves, reloads, and removes a Slack reference independently of notes", async () => {
+    const host = await start();
+    let harness = host.harness;
+    await harness.behavior.callRpc("saveNote", {
+      ...id,
+      body: "Keep these notes",
+      revision: 0,
+    });
+    expect(
+      await harness.behavior.callRpc("saveSlackLink", { ...id, url }),
+    ).toEqual({ url });
+    const replacement = await harness.lifecycle.reload(plugin);
+    hosts.splice(hosts.indexOf(host), 1, replacement);
+    harness = replacement.harness;
+    expect(await harness.behavior.callRpc("listSlackLinks")).toEqual({
+      links: [{ ...id, url }],
+    });
+    await harness.behavior.callRpc("saveSlackLink", {
+      ...id,
+      kind: "issue",
+      url,
+    });
+    await harness.behavior.callRpc("saveSlackLink", { ...id, url: "" });
+    expect(await harness.behavior.callRpc("listSlackLinks")).toEqual({
+      links: [{ ...id, kind: "issue", url }],
+    });
+    expect(await harness.behavior.callRpc("listNotes")).toMatchObject({
+      notes: [{ body: "Keep these notes", revision: 1 }],
+    });
+  });
+  it("rejects non-Slack URLs before storing them", async () => {
+    const { harness } = await start();
+    await expect(
+      harness.behavior.callRpc("saveSlackLink", {
+        ...id,
+        url: "https://example.com/message",
+      }),
+    ).rejects.toThrow();
+    expect(await harness.behavior.callRpc("listSlackLinks")).toEqual({
+      links: [],
+    });
+  });
+});

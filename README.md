@@ -35,6 +35,10 @@ bb plugin install https://github.com/frrad/bb-plugin-github
   appended explicitly. Conflicting edits from different devices require choosing
   which version to keep. Notes are separate from GitHub comments; personal note
   contents live in the plugin's server database, outside this repository.
+- **Slack references**: the expanded row includes a Slack thread link field.
+  Save a message permalink, open it in Slack, or remove it. Links are saved on
+  the BB server and available across devices. This link-only feature requires no
+  Slack token and does not load message contents inline.
 - **Issue detail**: markdown body, comments, comment box, status,
   assignee, and label editing, plus "Send agent".
   Deep-linkable via the URL hash: `#/issues/<owner>/<repo>/<number>`.

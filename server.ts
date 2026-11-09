@@ -12,6 +12,7 @@ import {
   type PluginCliResult,
 } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { normalizeSlackLink } from "./slack-link.js";
 
 // BB 0.48 caps active GitHub CLI processes at two.
 const SYNC_CONCURRENCY = 2;
@@ -159,7 +160,31 @@ const noteRecordSchema = z
   })
   .strict();
 
+const slackLinkSchema = z
+  .string()
+  .max(2048)
+  .refine((value) => {
+    try {
+      normalizeSlackLink(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Expected a Slack message permalink");
+
 export const githubRpcContract = defineRpcContract({
+  listSlackLinks: {
+    input: z.null(),
+    output: z
+      .object({
+        links: z.array(noteIdentitySchema.extend({ url: z.string() })),
+      })
+      .strict(),
+  },
+  saveSlackLink: {
+    input: noteIdentitySchema.extend({ url: slackLinkSchema }),
+    output: z.object({ url: z.string().nullable() }).strict(),
+  },
   listNotes: {
     input: z.null(),
     output: z
@@ -785,6 +810,10 @@ export default async function plugin(bb: BbPluginApi) {
        PRIMARY KEY (repo, kind, number)
      )`,
     `ALTER TABLE items ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0`,
+    `CREATE TABLE item_slack_links (
+      repo TEXT NOT NULL, kind TEXT NOT NULL, number INTEGER NOT NULL,
+      url TEXT NOT NULL, PRIMARY KEY (repo, kind, number)
+    )`,
   ]);
 
   function parseStringArray(raw: unknown): string[] {
@@ -1333,6 +1362,32 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   bb.rpc.register(githubRpcContract, {
+    async listSlackLinks() {
+      return githubRpcContract.listSlackLinks.output.parse({
+        links: db
+          .prepare(
+            "SELECT repo, kind, number, url FROM item_slack_links ORDER BY repo, kind, number",
+          )
+          .all(),
+      });
+    },
+    async saveSlackLink(input) {
+      const url = normalizeSlackLink(input.url);
+      if (url === null)
+        db.prepare(
+          "DELETE FROM item_slack_links WHERE repo = ? AND kind = ? AND number = ?",
+        ).run(input.repo, input.kind, input.number);
+      else
+        db.prepare(
+          "INSERT INTO item_slack_links (repo, kind, number, url) VALUES (?, ?, ?, ?) ON CONFLICT(repo, kind, number) DO UPDATE SET url = excluded.url",
+        ).run(input.repo, input.kind, input.number, url);
+      bb.realtime.publish("slack-links-changed", {
+        repo: input.repo,
+        kind: input.kind,
+        number: input.number,
+      });
+      return { url };
+    },
     async listNotes() {
       return githubRpcContract.listNotes.output.parse({
         notes: db
