@@ -49,12 +49,12 @@ describe("GitHub tab persistence", () => {
       const reopened = mount("");
       await act(async () => {});
       expect(
-        reopened
-          .getByRole("tab", {
-            name: tab === "pulls" ? "Pull requests" : "Issues",
-          })
-          .getAttribute("aria-selected"),
-      ).toBe("true");
+        (
+          reopened.getByRole("combobox", {
+            name: "Search type",
+          }) as HTMLSelectElement
+        ).value,
+      ).toBe(tab === "pulls" ? "pr" : "issue");
       const saved = JSON.parse(window.localStorage.getItem(SEARCHES_KEY)!);
       expect(saved[0].kind).toBe(tab === "pulls" ? "pr" : "issue");
       reopened.lifecycle.unmount();
@@ -66,8 +66,9 @@ describe("GitHub tab persistence", () => {
     const slot = mount("issues");
     await act(async () => {});
     expect(
-      slot.getByRole("tab", { name: "Issues" }).getAttribute("aria-selected"),
-    ).toBe("true");
+      (slot.getByRole("combobox", { name: "Search type" }) as HTMLSelectElement)
+        .value,
+    ).toBe("issue");
     expect(JSON.parse(window.localStorage.getItem(SEARCHES_KEY)!)[0].kind).toBe(
       "issue",
     );
@@ -105,16 +106,18 @@ describe("GitHub tab persistence", () => {
         within(second).getByRole("textbox", { name: "Search filter" }),
         { target: { value: "is:open label:bug" } },
       );
-      fireEvent.mouseDown(within(second).getByRole("tab", { name: "Issues" }), {
-        button: 0,
-        ctrlKey: false,
-      });
+      fireEvent.change(
+        within(second).getByRole("combobox", { name: "Search type" }),
+        { target: { value: "issue" } },
+      );
     });
     expect(
-      within(first)
-        .getByRole("tab", { name: "Pull requests" })
-        .getAttribute("aria-selected"),
-    ).toBe("true");
+      (
+        within(first).getByRole("combobox", {
+          name: "Search type",
+        }) as HTMLSelectElement
+      ).value,
+    ).toBe("pr");
     expect(
       within(first)
         .getByRole("textbox", { name: "Search filter" })
@@ -131,7 +134,9 @@ describe("GitHub tab persistence", () => {
     await act(async () =>
       slot.getByRole("button", { name: "Collapse Open issues" }).click(),
     );
-    expect(within(second).queryByRole("tab")).toBeNull();
+    expect(
+      within(second).queryByRole("textbox", { name: "Search filter" }),
+    ).toBeNull();
     slot.lifecycle.unmount();
 
     const reopened = mount("");
@@ -151,10 +156,12 @@ describe("GitHub tab persistence", () => {
     );
     const restored = reopened.getByRole("region", { name: "Open issues" });
     expect(
-      within(restored)
-        .getByRole("tab", { name: "Issues" })
-        .getAttribute("aria-selected"),
-    ).toBe("true");
+      (
+        within(restored).getByRole("combobox", {
+          name: "Search type",
+        }) as HTMLSelectElement
+      ).value,
+    ).toBe("issue");
     expect(
       within(restored)
         .getByRole("textbox", { name: "Search filter" })
@@ -204,8 +211,12 @@ describe("GitHub tab persistence", () => {
       const slot = mount("");
       await act(async () => {});
       expect(
-        slot.getByRole("tab", { name: "Issues" }).getAttribute("aria-selected"),
-      ).toBe("true");
+        (
+          slot.getByRole("combobox", {
+            name: "Search type",
+          }) as HTMLSelectElement
+        ).value,
+      ).toBe("issue");
       slot.lifecycle.unmount();
     },
   );

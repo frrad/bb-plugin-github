@@ -15,10 +15,10 @@ bb plugin install https://github.com/frrad/bb-plugin-github
 ## What it does
 
 - **Sidebar panel** (GitHub logo, full width): a stack of named searches across
-  every tracked repo. Each search has its own Issues/Pull requests tabs and filter.
+  every tracked repo. Each search has its own Issues/Pull requests dropdown and filter.
   Use **Add search**, edit its name, collapse it with the chevron, reorder it with
-  the up/down arrows, or remove it with the trash button. Names, filters, tab
-  selections, order, and collapsed state are remembered in this browser. Your
+  the up/down arrows, or remove it with the trash button. Names, filters, search
+  types, order, and collapsed state are remembered in this browser. Your
   previous single search becomes the first section automatically. Direct issue
   and PR links still open their details. Issue searches include a New issue form.
 - **Issue detail**: markdown body, comments, comment box, status,

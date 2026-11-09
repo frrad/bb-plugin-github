@@ -47,7 +47,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
@@ -2342,6 +2341,17 @@ function SearchSection({
         >
           <Icon name={search.collapsed ? "ChevronRight" : "ChevronDown"} />
         </Button>
+        <select
+          aria-label="Search type"
+          value={search.kind}
+          onChange={(event) =>
+            onChange({ kind: event.target.value === "pr" ? "pr" : "issue" })
+          }
+          className="h-8 max-w-36 shrink-0 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <option value="issue">Issues</option>
+          <option value="pr">Pull requests</option>
+        </select>
         <Input
           aria-label="Search name"
           value={search.name}
@@ -2390,25 +2400,13 @@ function SearchSection({
         hidden={search.collapsed}
         className="space-y-3"
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <Tabs
-            value={search.kind}
-            onValueChange={(value) =>
-              onChange({ kind: value === "pr" ? "pr" : "issue" })
-            }
-          >
-            <TabsList>
-              <TabsTrigger value="issue">Issues</TabsTrigger>
-              <TabsTrigger value="pr">Pull requests</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <div className="flex-1" />
-          {search.kind === "issue" ? (
+        {search.kind === "issue" ? (
+          <div className="flex justify-end">
             <Button size="sm" onClick={onNewIssue}>
               New issue
             </Button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
         <ListView
           kind={search.kind}
           query={search.query}
