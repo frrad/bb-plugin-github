@@ -191,6 +191,23 @@ describe("GitHub cached navigation", () => {
     await act(async () =>
       slot.getByRole("button", { name: "Refresh GitHub data" }).click(),
     );
+    await slot.emitRealtime("sync-progress", {
+      running: true,
+      completed: 2,
+      total: 8,
+      failed: 1,
+    });
+    expect(
+      slot.getByRole("button", {
+        name: "Syncing GitHub data: 2 of 8 repos · 1 failed",
+      }),
+    ).toBeTruthy();
+    await slot.emitRealtime("sync-progress", {
+      running: false,
+      completed: 8,
+      total: 8,
+      failed: 1,
+    });
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(
       (
@@ -463,6 +480,12 @@ describe("GitHub app navigation", () => {
         },
       },
     );
+    expect(await slot.findByText("Repo")).toBeTruthy();
+    expect(
+      slot
+        .getAllByText("get-bb/bb")
+        .some((cell) => cell.getAttribute("title") === "get-bb/bb"),
+    ).toBe(true);
     const github = await slot.findByRole("link", { name: "GitHub" });
     expect(github.getAttribute("href")).toBe(url);
     expect(github.getAttribute("target")).toBe("_blank");

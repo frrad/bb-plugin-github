@@ -13,6 +13,8 @@ import {
 } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
+// BB 0.48 caps active GitHub CLI processes at two.
+const SYNC_CONCURRENCY = 2;
 const SYNC_INTERVAL_MS = 15 * 60_000;
 const SYNC_RETRY_MAX_MS = 5 * 60_000;
 const SYNC_RETRY_BASE_MS = 30_000;
@@ -135,7 +137,18 @@ const pullSchema = z
   })
   .strict();
 
+const syncProgressSchema = z
+  .object({
+    running: z.boolean(),
+    completed: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  })
+  .strict();
+type SyncProgress = z.infer<typeof syncProgressSchema>;
+
 export const githubRpcContract = defineRpcContract({
+  syncProgress: { input: z.null(), output: syncProgressSchema },
   status: {
     input: z.null(),
     output: z
@@ -836,11 +849,33 @@ export default async function plugin(bb: BbPluginApi) {
     bb.realtime.publish("data-changed", {});
   }
 
-  async function syncAll(
+  let syncProgress: SyncProgress = {
+    running: false,
+    completed: 0,
+    total: 0,
+    failed: 0,
+  };
+  let syncInFlight: Promise<{ repos: number; items: number }> | null = null;
+  function publishProgress(patch: Partial<SyncProgress>) {
+    syncProgress = { ...syncProgress, ...patch };
+    bb.realtime.publish("sync-progress", syncProgress);
+  }
+  function syncAll(force = false): Promise<{ repos: number; items: number }> {
+    if (syncInFlight !== null) return syncInFlight;
+    publishProgress({ running: true, completed: 0, total: 0, failed: 0 });
+    syncInFlight = runSync(force).finally(() => {
+      syncInFlight = null;
+      publishProgress({ running: false });
+    });
+    return syncInFlight;
+  }
+
+  async function runSync(
     force = false,
   ): Promise<{ repos: number; items: number }> {
     await checkAuth();
     const repos = await discoverRepos(force);
+    publishProgress({ total: repos.length });
     const before = JSON.stringify(
       db
         .prepare(
@@ -851,20 +886,35 @@ export default async function plugin(bb: BbPluginApi) {
     let total = 0;
     let failed = 0;
     let lastFailure = "";
-    for (const { repo } of repos) {
-      try {
-        const items = await fetchRepoItems(
-          (args) => gh(args, undefined, "background"),
-          repo,
-        );
-        replaceRepoRows(repo, items);
-        total += items.length;
-      } catch (error) {
-        failed += 1;
-        lastFailure = errorMessage(error);
-        bb.log.warn(`sync failed for ${repo}: ${lastFailure}`);
-      }
-    }
+    let next = 0;
+    let completed = 0;
+    await Promise.all(
+      Array.from(
+        { length: Math.min(SYNC_CONCURRENCY, repos.length) },
+        async () => {
+          for (;;) {
+            const entry = repos[next++];
+            if (entry === undefined) return;
+            const { repo } = entry;
+            try {
+              const items = await fetchRepoItems(
+                (args) => gh(args, undefined, "background"),
+                repo,
+              );
+              replaceRepoRows(repo, items);
+              total += items.length;
+            } catch (error) {
+              failed += 1;
+              lastFailure = errorMessage(error);
+              bb.log.warn(`sync failed for ${repo}: ${lastFailure}`);
+            } finally {
+              completed += 1;
+              publishProgress({ completed, failed });
+            }
+          }
+        },
+      ),
+    );
     if (repos.length > 0 && failed === repos.length) {
       throw ghUnavailable(
         `sync failed for all ${repos.length} repo(s); last error: ${lastFailure}`,
@@ -1083,6 +1133,9 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   bb.rpc.register(githubRpcContract, {
+    async syncProgress() {
+      return syncProgress;
+    },
     async status() {
       if (ghState !== "ready") {
         try {

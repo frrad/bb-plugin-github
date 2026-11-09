@@ -134,11 +134,9 @@ it("allows immediate RPC and CLI refresh during the background wait", async () =
   expect(lists()).toHaveLength(4);
 });
 
-it("measures the wait from completion and does not overlap repository sweeps", async () => {
+it("measures the background wait from completion of the parallel sweep", async () => {
   fake.latency = 1000;
   await start(2);
-  expect(lists()).toHaveLength(1);
-  await vi.advanceTimersByTimeAsync(1000);
   expect(lists()).toHaveLength(2);
   await vi.advanceTimersByTimeAsync(1000);
   fake.latency = 0;
@@ -146,6 +144,45 @@ it("measures the wait from completion and does not overlap repository sweeps", a
   expect(lists()).toHaveLength(2);
   await vi.advanceTimersByTimeAsync(1);
   expect(lists()).toHaveLength(4);
+});
+
+it("fetches two repositories concurrently, reports progress, and shares an active sweep", async () => {
+  fake.latency = 1000;
+  fake.failedRepos.add("owner/repo-1");
+  const { harness } = await start(5);
+  expect(lists()).toHaveLength(2);
+  expect(await harness.callRpc("syncProgress")).toEqual({
+    running: true,
+    completed: 0,
+    total: 5,
+    failed: 0,
+  });
+  const manual = harness.callRpc("refresh");
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(lists()).toHaveLength(4);
+  expect(await harness.callRpc("syncProgress")).toEqual({
+    running: true,
+    completed: 2,
+    total: 5,
+    failed: 1,
+  });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(lists()).toHaveLength(5);
+  expect(await harness.callRpc("syncProgress")).toEqual({
+    running: true,
+    completed: 4,
+    total: 5,
+    failed: 1,
+  });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(await manual).toEqual({ repos: 5, items: 0 });
+  expect(lists()).toHaveLength(5);
+  expect(await harness.callRpc("syncProgress")).toEqual({
+    running: false,
+    completed: 5,
+    total: 5,
+    failed: 1,
+  });
 });
 
 it("finishes an in-flight sweep on abort without scheduling another", async () => {

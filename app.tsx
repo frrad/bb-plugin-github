@@ -499,6 +499,7 @@ function FilterBar({
 
 const COL = {
   id: "shrink-0 @[48rem]:w-12",
+  repo: "hidden w-32 shrink-0 truncate @[48rem]:block",
   assignee: "shrink-0 @[48rem]:w-20",
   status: "shrink-0 @[48rem]:w-24",
   updated: "hidden w-14 shrink-0 text-right @[48rem]:block",
@@ -671,6 +672,9 @@ function ItemRow({
         <span className="min-w-0 flex-1 line-clamp-3 text-sm font-medium leading-snug text-foreground @[48rem]:line-clamp-1 @[48rem]:leading-normal">
           {item.title}
         </span>
+        <span className="text-xs text-muted-foreground @[48rem]:hidden">
+          {item.repo}
+        </span>
         <LabelChips
           labels={item.labels}
           className="hidden shrink-0 @[60rem]:flex"
@@ -684,20 +688,26 @@ function ItemRow({
           #{item.number}
         </span>
         <span
-          className={`${COL.assignee} ${item.assignees.length === 0 ? "hidden @[48rem]:flex" : "flex"} text-xs text-muted-foreground @[48rem]:order-3`}
+          className={`${COL.repo} text-xs text-muted-foreground @[48rem]:order-3`}
+          title={item.repo}
+        >
+          {item.repo}
+        </span>
+        <span
+          className={`${COL.assignee} ${item.assignees.length === 0 ? "hidden @[48rem]:flex" : "flex"} text-xs text-muted-foreground @[48rem]:order-4`}
         >
           <AssigneeCell assignees={item.assignees} />
         </span>
-        <span className={`${COL.status} @[48rem]:order-4`}>
+        <span className={`${COL.status} @[48rem]:order-5`}>
           <StatusCell item={item} />
         </span>
         <span
-          className={`${COL.updated} text-xs text-muted-foreground @[48rem]:order-5`}
+          className={`${COL.updated} text-xs text-muted-foreground @[48rem]:order-6`}
         >
           {relativeTime(item.updatedAt)}
         </span>
         <span
-          className={`${COL.actions} ${actionWidth(item.kind)} @[48rem]:order-6`}
+          className={`${COL.actions} ${actionWidth(item.kind)} @[48rem]:order-7`}
         >
           <Button
             size="sm"
@@ -769,17 +779,20 @@ function TableSkeleton({ kind }: { kind: "issue" | "pr" }) {
               <span className={`${COL.id} @[48rem]:order-1`}>
                 <Skeleton className="h-3 w-10" />
               </span>
-              <span className={`${COL.assignee} flex @[48rem]:order-3`}>
+              <span className={`${COL.repo} @[48rem]:order-3`}>
+                <Skeleton className="h-3 w-24" />
+              </span>
+              <span className={`${COL.assignee} flex @[48rem]:order-4`}>
                 <Skeleton className="size-5 rounded-full @[48rem]:h-3 @[48rem]:w-16" />
               </span>
-              <span className={`${COL.status} @[48rem]:order-4`}>
+              <span className={`${COL.status} @[48rem]:order-5`}>
                 <Skeleton className="h-3 w-16" />
               </span>
-              <span className={`${COL.updated} @[48rem]:order-5`}>
+              <span className={`${COL.updated} @[48rem]:order-6`}>
                 <Skeleton className="ml-auto h-3 w-12" />
               </span>
               <span
-                className={`${COL.actions} ${actionWidth(kind)} @[48rem]:order-6`}
+                className={`${COL.actions} ${actionWidth(kind)} @[48rem]:order-7`}
               >
                 <Skeleton className="h-7 w-20" />
               </span>
@@ -853,6 +866,7 @@ function ItemsTable({
       <div className="hidden items-center gap-3 border-b border-border bg-muted/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:flex">
         <span className={COL.id}>ID</span>
         <span className="min-w-0 flex-1">Title</span>
+        <span className={COL.repo}>Repo</span>
         <span className={COL.assignee}>Assignee</span>
         <span className={COL.status}>Status</span>
         <span className={COL.updated}>Updated</span>
@@ -2092,9 +2106,51 @@ function useRefresh() {
   };
 }
 
+function useSyncProgress() {
+  type Progress = PluginRpcResult<(typeof githubRpcContract)["syncProgress"]>;
+  const rpc = useRpc<typeof githubRpcContract>();
+  const [progress, setProgress] = useState<Progress | null>(null);
+  const revision = useRef(0);
+  useEffect(() => {
+    let cancelled = false;
+    const requested = revision.current;
+    rpc.call("syncProgress").then(
+      (result) => {
+        if (!cancelled && revision.current === requested) setProgress(result);
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [rpc]);
+  useRealtime("sync-progress", (payload) => {
+    if (payload === null || typeof payload !== "object") return;
+    const value = payload as Record<string, unknown>;
+    if (
+      typeof value.running !== "boolean" ||
+      ![value.completed, value.total, value.failed].every(
+        (n) => typeof n === "number" && Number.isInteger(n) && n >= 0,
+      ) ||
+      (value.completed as number) > (value.total as number) ||
+      (value.failed as number) > (value.completed as number)
+    )
+      return;
+    revision.current += 1;
+    setProgress(value as unknown as Progress);
+  });
+  return progress;
+}
+
 function PanelHeader() {
   const { status } = useStatus();
-  const { refresh, syncing, failed } = useRefresh();
+  const { refresh, syncing: refreshing, failed } = useRefresh();
+  const progress = useSyncProgress();
+  const syncing = refreshing || progress?.running === true;
+  const progressText =
+    syncing && progress?.running && progress.total > 0
+      ? `${progress.completed} of ${progress.total} repos${progress.failed > 0 ? ` · ${progress.failed} failed` : ""}`
+      : null;
   return (
     <>
       <span className="hidden text-xs text-muted-foreground @min-[40rem]/page-header:inline">
@@ -2120,11 +2176,15 @@ function PanelHeader() {
         className="size-8 gap-1.5 px-0 @min-[32rem]/page-header:h-8 @min-[32rem]/page-header:w-auto @min-[32rem]/page-header:px-3"
         disabled={syncing}
         onClick={refresh}
-        aria-label={syncing ? "Syncing GitHub data" : "Refresh GitHub data"}
+        aria-label={
+          syncing
+            ? `Syncing GitHub data${progressText ? `: ${progressText}` : ""}`
+            : "Refresh GitHub data"
+        }
       >
         <RefreshIcon className={syncing ? "animate-spin" : undefined} />
         <span className="hidden @min-[32rem]/page-header:inline">
-          {syncing ? "Syncing…" : "Refresh"}
+          {syncing ? (progressText ?? "Syncing…") : "Refresh"}
         </span>
       </Button>
     </>

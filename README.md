@@ -15,7 +15,7 @@ bb plugin install https://github.com/frrad/bb-plugin-github
 ## What it does
 
 - **Sidebar panel** (GitHub logo, full width): a stack of named searches across
-  every tracked repo. Each search has its own Issues/Pull requests dropdown and filter.
+  every tracked repo, with a Repo column in each list. Each search has its own Issues/Pull requests dropdown and filter.
   Use **Add search**, edit its name, collapse it with the chevron, reorder it with
   the up/down arrows, or remove it with the trash button. Names, filters, search
   types, order, and collapsed state are remembered in this browser. Your
@@ -57,7 +57,10 @@ bb plugin reload github-fred
 
 A background service refreshes immediately on startup, then waits 15 minutes
 after each completed sync. Each tracked repository uses one bounded `gh api graphql`
-request per sweep, using the existing GitHub CLI authentication. It fetches
+request per sweep, using the existing GitHub CLI authentication. Two repositories
+are fetched concurrently, respecting BB's GitHub process limit. Refresh requests
+share an active sweep, and the refresh button shows completed/total repositories
+and any failed repository count. Failed repositories keep their cached rows. It fetches
 100 open and 50 closed issues, plus 50 open and 30 closed or merged PRs,
 ordered by creation time descending. Labels and assignees are each limited to
 100 per item, matching the previous list commands. Repositories with Issues
