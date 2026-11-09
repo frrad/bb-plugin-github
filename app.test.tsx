@@ -2,30 +2,35 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
+import { fireEvent, within } from "@testing-library/dom";
+import { SEARCHES_KEY } from "./saved-searches.js";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 
 const app = await loadPluginApp(() => import("./app"));
 
+beforeEach(() => window.localStorage.clear());
+
 describe("GitHub tab persistence", () => {
   const key = "bb-plugin-github-fred:tab";
-  const mount = (subPath: string) => renderSlot(
-    app.navPanels[0]!,
-    { subPath },
-    {
-      rpc: {
-        status: () => ({
-          ghOk: true,
-          ghState: "ready",
-          ghError: null,
-          repos: [{ repo: "get-bb/bb", projectId: null }],
-          lastSyncedAt: null,
-        }),
-        listItems: () => ({ items: [] }),
-        listLinks: () => ({ links: {} }),
-        viewer: () => ({ login: "octocat" }),
+  const mount = (subPath: string) =>
+    renderSlot(
+      app.navPanels[0]!,
+      { subPath },
+      {
+        rpc: {
+          status: () => ({
+            ghOk: true,
+            ghState: "ready",
+            ghError: null,
+            repos: [{ repo: "get-bb/bb", projectId: null }],
+            lastSyncedAt: null,
+          }),
+          listItems: () => ({ items: [] }),
+          listLinks: () => ({ links: {} }),
+          viewer: () => ({ login: "octocat" }),
+        },
       },
-    },
-  );
+    );
 
   beforeEach(() => window.localStorage.clear());
   afterEach(() => {
@@ -33,65 +38,216 @@ describe("GitHub tab persistence", () => {
     window.localStorage.clear();
   });
 
-  it.each(["pulls", "issues"])("restores %s after leaving and reopening the page", async (tab) => {
-    window.localStorage.setItem(key, tab === "pulls" ? "issues" : "pulls");
-    const first = mount(tab);
-    await act(async () => {});
-    first.lifecycle.unmount();
+  it.each(["pulls", "issues"])(
+    "restores %s after leaving and reopening the page",
+    async (tab) => {
+      window.localStorage.setItem(key, tab === "pulls" ? "issues" : "pulls");
+      const first = mount(tab);
+      await act(async () => {});
+      first.lifecycle.unmount();
 
-    const reopened = mount("");
-    await act(async () => {});
-    expect(reopened.getByRole("tab", {
-      name: tab === "pulls" ? "Pull requests" : "Issues",
-    }).getAttribute("aria-selected")).toBe("true");
-    expect(reopened.navigateCalls).toContainEqual({
-      method: "toPluginPanel",
-      path: "github-fred",
-      options: { subPath: tab, replace: true },
-    });
-    reopened.lifecycle.unmount();
-  });
+      const reopened = mount("");
+      await act(async () => {});
+      expect(
+        reopened
+          .getByRole("tab", {
+            name: tab === "pulls" ? "Pull requests" : "Issues",
+          })
+          .getAttribute("aria-selected"),
+      ).toBe("true");
+      const saved = JSON.parse(window.localStorage.getItem(SEARCHES_KEY)!);
+      expect(saved[0].kind).toBe(tab === "pulls" ? "pr" : "issue");
+      reopened.lifecycle.unmount();
+    },
+  );
 
   it("keeps explicit links ahead of the saved tab", async () => {
     window.localStorage.setItem(key, "pulls");
     const slot = mount("issues");
     await act(async () => {});
-    expect(slot.getByRole("tab", { name: "Issues" }).getAttribute("aria-selected")).toBe("true");
-    expect(window.localStorage.getItem(key)).toBe("issues");
+    expect(
+      slot.getByRole("tab", { name: "Issues" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(JSON.parse(window.localStorage.getItem(SEARCHES_KEY)!)[0].kind).toBe(
+      "issue",
+    );
     slot.lifecycle.unmount();
   });
 
-  it.each(["invalid", "unavailable"])("defaults to Issues when storage is %s", async (storage) => {
-    if (storage === "invalid") window.localStorage.setItem(key, "garbage");
-    else {
-      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
-      vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
-    }
+  it("keeps named searches independent and persists editing, ordering, collapse, and removal", async () => {
+    window.localStorage.setItem(
+      "bb-plugin-github-fred:query",
+      "is:open author:@me",
+    );
+    window.localStorage.setItem(key, "pulls");
     const slot = mount("");
     await act(async () => {});
-    expect(slot.getByRole("tab", { name: "Issues" }).getAttribute("aria-selected")).toBe("true");
+    const first = slot.getByRole("region", { name: "My search" });
+    expect(
+      within(first)
+        .getByRole("textbox", { name: "Search filter" })
+        .getAttribute("value"),
+    ).toBe("is:open author:@me");
+    await act(async () => {
+      fireEvent.change(
+        within(first).getByRole("textbox", { name: "Search name" }),
+        { target: { value: "My open PRs" } },
+      );
+      slot.getByRole("button", { name: "Add search" }).click();
+    });
+    const second = slot.getByRole("region", { name: "Search 2" });
+    await act(async () => {
+      fireEvent.change(
+        within(second).getByRole("textbox", { name: "Search name" }),
+        { target: { value: "Open issues" } },
+      );
+      fireEvent.change(
+        within(second).getByRole("textbox", { name: "Search filter" }),
+        { target: { value: "is:open label:bug" } },
+      );
+      fireEvent.mouseDown(within(second).getByRole("tab", { name: "Issues" }), {
+        button: 0,
+        ctrlKey: false,
+      });
+    });
+    expect(
+      within(first)
+        .getByRole("tab", { name: "Pull requests" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(
+      within(first)
+        .getByRole("textbox", { name: "Search filter" })
+        .getAttribute("value"),
+    ).toBe("is:open author:@me");
+    await act(async () =>
+      within(second).getByRole("button", { name: "Move search up" }).click(),
+    );
+    expect(
+      slot
+        .getAllByRole("region")
+        .map((region) => region.getAttribute("aria-label")),
+    ).toEqual(["Open issues", "My open PRs"]);
+    await act(async () =>
+      slot.getByRole("button", { name: "Collapse Open issues" }).click(),
+    );
+    expect(within(second).queryByRole("tab")).toBeNull();
     slot.lifecycle.unmount();
+
+    const reopened = mount("");
+    await act(async () => {});
+    expect(
+      reopened
+        .getAllByRole("region")
+        .map((region) => region.getAttribute("aria-label")),
+    ).toEqual(["Open issues", "My open PRs"]);
+    expect(
+      reopened
+        .getByRole("button", { name: "Expand Open issues" })
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
+    await act(async () =>
+      reopened.getByRole("button", { name: "Expand Open issues" }).click(),
+    );
+    const restored = reopened.getByRole("region", { name: "Open issues" });
+    expect(
+      within(restored)
+        .getByRole("tab", { name: "Issues" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(
+      within(restored)
+        .getByRole("textbox", { name: "Search filter" })
+        .getAttribute("value"),
+    ).toBe("is:open label:bug");
+    await act(async () =>
+      within(restored)
+        .getByRole("button", { name: "Move search down" })
+        .click(),
+    );
+    expect(
+      reopened
+        .getAllByRole("region")
+        .map((region) => region.getAttribute("aria-label")),
+    ).toEqual(["My open PRs", "Open issues"]);
+    await act(async () => {
+      for (const button of reopened.getAllByRole("button", {
+        name: "Remove search",
+      }))
+        button.click();
+    });
+    expect(reopened.queryAllByRole("region")).toHaveLength(0);
+    reopened.lifecycle.unmount();
+
+    const empty = mount("");
+    await act(async () => {});
+    expect(empty.queryAllByRole("region")).toHaveLength(0);
+    await act(async () =>
+      empty.getByRole("button", { name: "Add search" }).click(),
+    );
+    expect(empty.getAllByRole("region")).toHaveLength(1);
+    empty.lifecycle.unmount();
   });
+
+  it.each(["invalid", "unavailable"])(
+    "defaults to Issues when storage is %s",
+    async (storage) => {
+      if (storage === "invalid") window.localStorage.setItem(key, "garbage");
+      else {
+        vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+          throw new Error("blocked");
+        });
+        vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+          throw new Error("blocked");
+        });
+      }
+      const slot = mount("");
+      await act(async () => {});
+      expect(
+        slot.getByRole("tab", { name: "Issues" }).getAttribute("aria-selected"),
+      ).toBe("true");
+      slot.lifecycle.unmount();
+    },
+  );
 });
 
 describe("GitHub app navigation", () => {
   it("shows external GitHub and copy-link actions beside PR review", async () => {
     const url = "https://github.com/get-bb/bb/pull/42";
-    const slot = renderSlot(app.navPanels[0]!, { subPath: "pulls" }, {
-      rpc: {
-        listItems: () => ({ items: [{
-          repo: "get-bb/bb", number: 42, kind: "pr", title: "A pull request",
-          state: "OPEN", author: "octocat", labels: [], assignees: [], url,
-          body: "", updatedAt: "2026-08-20T00:00:00.000Z",
-        }] }),
-        listLinks: () => ({ links: {} }),
-        status: () => ({
-          ghOk: true, ghState: "ready", ghError: null,
-          repos: [{ repo: "get-bb/bb", projectId: null }], lastSyncedAt: null,
-        }),
-        viewer: () => ({ login: "octocat" }),
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "pulls" },
+      {
+        rpc: {
+          listItems: () => ({
+            items: [
+              {
+                repo: "get-bb/bb",
+                number: 42,
+                kind: "pr",
+                title: "A pull request",
+                state: "OPEN",
+                author: "octocat",
+                labels: [],
+                assignees: [],
+                url,
+                body: "",
+                updatedAt: "2026-08-20T00:00:00.000Z",
+              },
+            ],
+          }),
+          listLinks: () => ({ links: {} }),
+          status: () => ({
+            ghOk: true,
+            ghState: "ready",
+            ghError: null,
+            repos: [{ repo: "get-bb/bb", projectId: null }],
+            lastSyncedAt: null,
+          }),
+          viewer: () => ({ login: "octocat" }),
+        },
       },
-    });
+    );
     const github = await slot.findByRole("link", { name: "GitHub" });
     expect(github.getAttribute("href")).toBe(url);
     expect(github.getAttribute("target")).toBe("_blank");
@@ -102,7 +258,9 @@ describe("GitHub app navigation", () => {
     const copy = slot.getByRole("button", { name: "Copy GitHub link" });
     expect(actions.children[2]).toBe(copy);
     await act(async () => copy.click());
-    expect(slot.inspection.experimental_clipboardWrites).toEqual([{ text: url }]);
+    expect(slot.inspection.experimental_clipboardWrites).toEqual([
+      { text: url },
+    ]);
     expect(slot.navigateCalls).toEqual([]);
     slot.lifecycle.unmount();
   });

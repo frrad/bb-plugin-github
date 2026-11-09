@@ -29,6 +29,7 @@
     "components",
     "testing",
     "app-logic.ts",
-    "lib"
+    "lib",
+    "saved-searches.ts"
   ]
 }

@@ -14,10 +14,13 @@ bb plugin install https://github.com/frrad/bb-plugin-github
 
 ## What it does
 
-- **Sidebar panel** (GitHub logo, full width): Issues and Pull requests tabs
-  across every tracked repo, with a repo filter (persisted in localStorage)
-  and a New issue form. The selected tab is remembered in this browser when
-  you return; direct links still open their requested issue or pull request.
+- **Sidebar panel** (GitHub logo, full width): a stack of named searches across
+  every tracked repo. Each search has its own Issues/Pull requests tabs and filter.
+  Use **Add search**, edit its name, collapse it with the chevron, reorder it with
+  the up/down arrows, or remove it with the trash button. Names, filters, tab
+  selections, order, and collapsed state are remembered in this browser. Your
+  previous single search becomes the first section automatically. Direct issue
+  and PR links still open their details. Issue searches include a New issue form.
 - **Issue detail**: markdown body, comments, comment box, status,
   assignee, and label editing, plus "Send agent".
   Deep-linkable via the URL hash: `#/issues/<owner>/<repo>/<number>`.

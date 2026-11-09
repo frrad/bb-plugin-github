@@ -51,6 +51,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
+import {
+  SEARCHES_KEY,
+  parseSavedSearches,
+  moveSearch,
+  type SavedSearch,
+} from "./saved-searches.js";
 
 type IssueDetail = PluginRpcResult<
   (typeof githubRpcContract)["getIssue"]
@@ -86,31 +92,7 @@ const TAB_KEY = "bb-plugin-github-fred:tab";
 
 function useSubPathRoute(subPath: string): [Route, (route: Route) => void] {
   const bbNavigate = useBbNavigate();
-  const [lastTab, setLastTab] = useState<"issues" | "pulls">(() => {
-    try {
-      return window.localStorage.getItem(TAB_KEY) === "pulls"
-        ? "pulls"
-        : "issues";
-    } catch {
-      return "issues";
-    }
-  });
-  const route = useMemo(
-    () => parseSubPath(subPath || lastTab),
-    [subPath, lastTab],
-  );
-  const tab = route.view === "pulls" || route.view === "pull" ? "pulls" : "issues";
-  useEffect(() => {
-    setLastTab(tab);
-    try {
-      window.localStorage.setItem(TAB_KEY, tab);
-    } catch {}
-  }, [tab]);
-  useEffect(() => {
-    if (subPath.length === 0) {
-      bbNavigate.toPluginPanel(PANEL_PATH, { subPath: tab, replace: true });
-    }
-  }, [bbNavigate, subPath, tab]);
+  const route = useMemo(() => parseSubPath(subPath), [subPath]);
   const navigate = useCallback(
     (next: Route) => {
       bbNavigate.toPluginPanel(PANEL_PATH, { subPath: routeToSubPath(next) });
@@ -464,6 +446,7 @@ function FilterBar({
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onKeyDown={onKeyDown}
+        aria-label="Search filter"
         placeholder="Filter — is:open assignee:@me label:bug, or plain text"
         className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 pr-8 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         spellCheck={false}
@@ -523,8 +506,7 @@ const COL = {
   assignee: "shrink-0 @[48rem]:w-20",
   status: "shrink-0 @[48rem]:w-24",
   updated: "hidden w-14 shrink-0 text-right @[48rem]:block",
-  actions:
-    "ml-auto flex shrink-0 items-center justify-end gap-1 @[48rem]:ml-0",
+  actions: "ml-auto flex shrink-0 items-center justify-end gap-1 @[48rem]:ml-0",
 } as const;
 
 function actionWidth(kind: "issue" | "pr") {
@@ -718,7 +700,9 @@ function ItemRow({
         >
           {relativeTime(item.updatedAt)}
         </span>
-        <span className={`${COL.actions} ${actionWidth(item.kind)} @[48rem]:order-6`}>
+        <span
+          className={`${COL.actions} ${actionWidth(item.kind)} @[48rem]:order-6`}
+        >
           <Button
             size="sm"
             variant="outline"
@@ -766,7 +750,9 @@ function ItemRow({
                 <Icon name="Link" className="size-3.5" />
               </Button>
             </>
-          ) : <RowMenu item={item} />}
+          ) : (
+            <RowMenu item={item} />
+          )}
         </span>
       </span>
     </div>
@@ -796,7 +782,9 @@ function TableSkeleton({ kind }: { kind: "issue" | "pr" }) {
               <span className={`${COL.updated} @[48rem]:order-5`}>
                 <Skeleton className="ml-auto h-3 w-12" />
               </span>
-              <span className={`${COL.actions} ${actionWidth(kind)} @[48rem]:order-6`}>
+              <span
+                className={`${COL.actions} ${actionWidth(kind)} @[48rem]:order-6`}
+              >
                 <Skeleton className="h-7 w-20" />
               </span>
             </span>
@@ -2103,19 +2091,29 @@ const DEFAULT_QUERY = "is:open ";
 function GithubPanel({ subPath }: PluginNavPanelProps) {
   const [route, navigate] = useSubPathRoute(subPath);
   const { status } = useStatus();
-  const [query, setQueryState] = useState<string>(() => {
+  const [searches, setSearches] = useState<SavedSearch[]>(() => {
+    let query = DEFAULT_QUERY;
+    let kind: SavedSearch["kind"] = "issue";
     try {
-      return window.localStorage.getItem(QUERY_KEY) ?? DEFAULT_QUERY;
-    } catch {
-      return DEFAULT_QUERY;
-    }
-  });
-  const setQuery = useCallback((next: string) => {
-    setQueryState(next);
-    try {
-      window.localStorage.setItem(QUERY_KEY, next);
+      const saved = parseSavedSearches(
+        window.localStorage.getItem(SEARCHES_KEY),
+      );
+      if (saved !== null) return saved;
+      query = window.localStorage.getItem(QUERY_KEY) ?? DEFAULT_QUERY;
+      kind = window.localStorage.getItem(TAB_KEY) === "pulls" ? "pr" : "issue";
     } catch {}
-  }, []);
+    if (subPath === "issues" || subPath === "pulls") {
+      kind = subPath === "pulls" ? "pr" : "issue";
+    }
+    return [
+      { id: "initial", name: "My search", kind, query, collapsed: false },
+    ];
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SEARCHES_KEY, JSON.stringify(searches));
+    } catch {}
+  }, [searches]);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
@@ -2124,8 +2122,8 @@ function GithubPanel({ subPath }: PluginNavPanelProps) {
           route={route}
           navigate={navigate}
           status={status}
-          query={query}
-          setQuery={setQuery}
+          searches={searches}
+          setSearches={setSearches}
         />
       </div>
     </div>
@@ -2179,14 +2177,14 @@ function GithubPanelBody({
   route,
   navigate,
   status,
-  query,
-  setQuery,
+  searches,
+  setSearches,
 }: {
   route: Route;
   navigate: (route: Route) => void;
   status: Status | null;
-  query: string;
-  setQuery: (query: string) => void;
+  searches: SavedSearch[];
+  setSearches: React.Dispatch<React.SetStateAction<SavedSearch[]>>;
 }) {
   const openItem = useCallback(
     (itemKind: "issue" | "pr", repo: string, number: number) => {
@@ -2252,39 +2250,174 @@ function GithubPanelBody({
     );
   }
 
-  const kind = route.view === "pulls" ? "pr" : "issue";
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <Tabs
-          value={route.view}
-          onValueChange={(value) => {
-            navigate(
-              value === "pulls" ? { view: "pulls" } : { view: "issues" },
-            );
-          }}
-        >
-          <TabsList>
-            <TabsTrigger value="issues">Issues</TabsTrigger>
-            <TabsTrigger value="pulls">Pull requests</TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="flex-1" />
-        {route.view === "issues" ? (
-          <Button size="sm" onClick={() => navigate({ view: "new" })}>
-            New issue
-          </Button>
-        ) : null}
-      </div>
-
-      <ListView
-        kind={kind}
-        query={query}
-        setQuery={setQuery}
-        repos={status?.repos ?? []}
-        onOpenItem={(repo, number) => openItem(kind, repo, number)}
-      />
+    <div className="flex flex-col gap-5">
+      {searches.map((search, index) => (
+        <SearchSection
+          key={search.id}
+          search={search}
+          first={index === 0}
+          last={index === searches.length - 1}
+          repos={status?.repos ?? []}
+          onChange={(patch) =>
+            setSearches((current) =>
+              current.map((entry) =>
+                entry.id === search.id ? { ...entry, ...patch } : entry,
+              ),
+            )
+          }
+          onMove={(offset) =>
+            setSearches((current) => moveSearch(current, search.id, offset))
+          }
+          onRemove={() =>
+            setSearches((current) =>
+              current.filter((entry) => entry.id !== search.id),
+            )
+          }
+          onOpenItem={(repo, number) => openItem(search.kind, repo, number)}
+          onNewIssue={() => navigate({ view: "new" })}
+        />
+      ))}
+      {searches.length === 0 ? (
+        <EmptyState message="No searches yet. Add a search to start browsing issues and pull requests." />
+      ) : null}
+      <Button
+        variant="outline"
+        className="self-start"
+        onClick={() =>
+          setSearches((current) => [
+            ...current,
+            {
+              id: crypto.randomUUID(),
+              name: `Search ${current.length + 1}`,
+              kind: "pr",
+              query: DEFAULT_QUERY,
+              collapsed: false,
+            },
+          ])
+        }
+      >
+        <Icon name="Plus" /> Add search
+      </Button>
     </div>
+  );
+}
+
+function SearchSection({
+  search,
+  first,
+  last,
+  repos,
+  onChange,
+  onMove,
+  onRemove,
+  onOpenItem,
+  onNewIssue,
+}: {
+  search: SavedSearch;
+  first: boolean;
+  last: boolean;
+  repos: RepoInfo[];
+  onChange: (patch: Partial<SavedSearch>) => void;
+  onMove: (offset: -1 | 1) => void;
+  onRemove: () => void;
+  onOpenItem: (repo: string, number: number) => void;
+  onNewIssue: () => void;
+}) {
+  const name = search.name.trim() || "Untitled search";
+  return (
+    <section
+      aria-label={name}
+      className="rounded-lg border border-border bg-card p-3 space-y-3"
+    >
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0"
+          aria-label={`${search.collapsed ? "Expand" : "Collapse"} ${name}`}
+          aria-expanded={!search.collapsed}
+          aria-controls={`search-${search.id}`}
+          onClick={() => onChange({ collapsed: !search.collapsed })}
+        >
+          <Icon name={search.collapsed ? "ChevronRight" : "ChevronDown"} />
+        </Button>
+        <Input
+          aria-label="Search name"
+          value={search.name}
+          placeholder="Search name"
+          className="h-8 min-w-0 flex-1 border-transparent font-medium shadow-none hover:border-input"
+          onChange={(event) => onChange({ name: event.target.value })}
+        />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0"
+          aria-label="Move search up"
+          disabled={first}
+          onClick={() => onMove(-1)}
+        >
+          <Icon name="ArrowUp" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0"
+          aria-label="Move search down"
+          disabled={last}
+          onClick={() => onMove(1)}
+        >
+          <Icon name="ArrowDown" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0"
+          aria-label="Remove search"
+          onClick={onRemove}
+        >
+          <Icon name="Trash2" />
+        </Button>
+      </div>
+      {search.collapsed ? (
+        <p className="truncate px-2 text-xs text-muted-foreground">
+          {search.kind === "pr" ? "Pull requests" : "Issues"} ·{" "}
+          {search.query.trim() || "All items"}
+        </p>
+      ) : null}
+      <div
+        id={`search-${search.id}`}
+        hidden={search.collapsed}
+        className="space-y-3"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs
+            value={search.kind}
+            onValueChange={(value) =>
+              onChange({ kind: value === "pr" ? "pr" : "issue" })
+            }
+          >
+            <TabsList>
+              <TabsTrigger value="issue">Issues</TabsTrigger>
+              <TabsTrigger value="pr">Pull requests</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <div className="flex-1" />
+          {search.kind === "issue" ? (
+            <Button size="sm" onClick={onNewIssue}>
+              New issue
+            </Button>
+          ) : null}
+        </div>
+        <ListView
+          kind={search.kind}
+          query={search.query}
+          setQuery={(query) => onChange({ query })}
+          repos={repos}
+          onOpenItem={onOpenItem}
+        />
+      </div>
+    </section>
   );
 }
 
