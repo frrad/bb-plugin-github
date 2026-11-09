@@ -66,12 +66,7 @@ import {
   type TablePreferences,
 } from "./table-layout.js";
 import { panelCache, isSyncStale } from "./panel-cache.js";
-import {
-  itemNoteKey,
-  readItemNote,
-  writeItemNote,
-  subscribeItemNotes,
-} from "./item-notes.js";
+import { itemNoteKey, itemNotes, type NotesTransport } from "./item-notes.js";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
 import {
@@ -664,6 +659,17 @@ function RowMenu({ item }: { item: Item }) {
   );
 }
 
+function useNotesTransport(): NotesTransport {
+  const rpc = useRpc<typeof githubRpcContract>();
+  return useMemo(
+    () => ({
+      load: () => rpc.call("listNotes").then((result) => result.notes),
+      save: (input) => rpc.call("saveNote", input),
+    }),
+    [rpc],
+  );
+}
+
 function ItemRow({
   item,
   links,
@@ -676,12 +682,12 @@ function ItemRow({
   const { spawn, spawningKey } = useSpawn();
   const busy = spawningKey === `${item.repo}#${item.number}`;
   const [notesOpen, setNotesOpen] = useState(false);
-  const [notesSaved, setNotesSaved] = useState(true);
   const notesId = useId();
   const noteKey = itemNoteKey(item.kind, item.repo, item.number);
-  const readNote = useCallback(() => readItemNote(noteKey), [noteKey]);
+  const transport = useNotesTransport();
+  const readNote = useCallback(() => itemNotes.getSnapshot(noteKey), [noteKey]);
   const subscribeNote = useCallback(
-    (listener: () => void) => subscribeItemNotes(noteKey, listener),
+    (listener: () => void) => itemNotes.subscribe(noteKey, listener),
     [noteKey],
   );
   const note = useSyncExternalStore(subscribeNote, readNote);
@@ -712,7 +718,7 @@ function ItemRow({
               name={notesOpen ? "ChevronUp" : "ChevronDown"}
               className="size-3.5"
             />
-            {note.length > 0 ? (
+            {note.body.length > 0 || note.backup ? (
               <span
                 aria-hidden="true"
                 className="absolute bottom-0.5 right-0.5 size-1 rounded-full bg-foreground"
@@ -840,19 +846,77 @@ function ItemRow({
             </label>
             <Textarea
               id={notesId}
-              value={note}
+              value={note.body}
               rows={3}
+              maxLength={100_000}
+              disabled={!note.loaded}
+              onBlur={() => {
+                void itemNotes.save(noteKey, transport);
+              }}
               aria-label={`Notes for ${item.repo}#${item.number}`}
               placeholder="Add a note…"
               onChange={(event) =>
-                setNotesSaved(writeItemNote(noteKey, event.target.value))
+                itemNotes.edit(noteKey, event.target.value, transport)
               }
             />
             <p className="text-xs text-muted-foreground" role="status">
-              {notesSaved
-                ? "Saved in this browser"
-                : "Couldn’t save in this browser. Keep this window open to retain these notes."}
+              {note.error ??
+                (!note.loaded
+                  ? "Loading notes…"
+                  : note.saving
+                    ? "Saving…"
+                    : note.dirty
+                      ? "Unsaved changes"
+                      : "Saved on BB server")}
             </p>
+            {note.conflict ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Server version</p>
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border p-2 text-sm font-sans">
+                  {note.conflict.body || "(empty)"}
+                </pre>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => itemNotes.useServer(noteKey)}
+                  >
+                    Use server version
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => itemNotes.overwrite(noteKey, transport)}
+                  >
+                    Save my version
+                  </Button>
+                </div>
+              </div>
+            ) : note.error ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (note.loaded && note.dirty)
+                    void itemNotes.save(noteKey, transport);
+                  else void itemNotes.refresh(transport);
+                }}
+              >
+                Retry
+              </Button>
+            ) : null}
+            {note.backup ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                A different browser note was preserved.
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => itemNotes.appendBackup(noteKey, transport)}
+                >
+                  Append browser note
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -2462,6 +2526,13 @@ const QUERY_KEY = "bb-plugin-github-fred:query";
 const DEFAULT_QUERY = "is:open ";
 
 function GithubPanel({ subPath }: PluginNavPanelProps) {
+  const notesTransport = useNotesTransport();
+  useEffect(() => {
+    void itemNotes.refresh(notesTransport);
+  }, [notesTransport]);
+  useRealtime("notes-changed", () => {
+    void itemNotes.refresh(notesTransport);
+  });
   const [route, navigate] = useSubPathRoute(subPath);
   const { status } = useStatus();
   const { refreshIfStale } = useRefresh();

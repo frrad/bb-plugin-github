@@ -26,9 +26,13 @@ bb plugin install https://github.com/frrad/bb-plugin-github
   it to reset its width. Focus a divider and use the arrow keys to resize with
   the keyboard. Sorting and widths are saved separately for each search.
 - **Per-item notes**: expand the arrow beside an issue or PR title to edit notes.
-  Notes autosave in this browser and are shared across searches for the same
-  item. A small dot marks items that have notes. These notes are separate from
-  GitHub comments.
+  Notes autosave on the BB server and are available from any device connected to
+  it, shared across searches for the same item. A small dot marks items with notes.
+  Existing browser notes migrate automatically when that browser opens the panel.
+  If a server note already differs, the browser copy is preserved and can be
+  appended explicitly. Conflicting edits from different devices require choosing
+  which version to keep. Notes are separate from GitHub comments; personal note
+  contents live in the plugin's server database, outside this repository.
 - **Issue detail**: markdown body, comments, comment box, status,
   assignee, and label editing, plus "Send agent".
   Deep-linkable via the URL hash: `#/issues/<owner>/<repo>/<number>`.

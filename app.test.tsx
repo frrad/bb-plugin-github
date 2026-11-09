@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { fireEvent, within } from "@testing-library/dom";
-import { itemNoteKey } from "./item-notes";
+import { itemNoteKey, itemNotes, type ServerNote } from "./item-notes";
 import { panelCache } from "./panel-cache";
 import { SEARCHES_KEY } from "./saved-searches.js";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -12,6 +12,7 @@ const app = await loadPluginApp(() => import("./app"));
 
 beforeEach(() => {
   window.localStorage.clear();
+  itemNotes.clear();
   for (const cache of Object.values(panelCache)) cache.clear();
 });
 
@@ -49,12 +50,34 @@ describe("item notes", () => {
         },
       ]),
     );
+    const serverNotes = new Map<string, ServerNote>();
     const mount = () =>
       renderSlot(
         app.navPanels[0]!,
         { subPath: "" },
         {
           rpc: {
+            listNotes: () => ({ notes: [...serverNotes.values()] }),
+            saveNote: (raw: unknown) => {
+              const input = raw as ServerNote;
+              const key = itemNoteKey(input.kind, input.repo, input.number);
+              const current = serverNotes.get(key) ?? {
+                ...input,
+                body: "",
+                revision: 0,
+              };
+              if (input.revision !== current.revision)
+                return {
+                  saved: false,
+                  note: { body: current.body, revision: current.revision },
+                };
+              const saved = { ...input, revision: input.revision + 1 };
+              serverNotes.set(key, saved);
+              return {
+                saved: true,
+                note: { body: saved.body, revision: saved.revision },
+              };
+            },
             status: () => ({
               ghOk: true,
               ghState: "ready",
@@ -96,9 +119,17 @@ describe("item notes", () => {
         }) as HTMLTextAreaElement
       ).value,
     ).toBe("Check edge cases before reviewing.");
+    await act(async () =>
+      fireEvent.focusOut(
+        first.getByRole("textbox", { name: "Notes for acme/widgets#42" }),
+      ),
+    );
+    expect(serverNotes.get(itemNoteKey("pr", "acme/widgets", 42))?.body).toBe(
+      "Check edge cases before reviewing.",
+    );
     expect(
       window.localStorage.getItem(itemNoteKey("pr", "acme/widgets", 42)),
-    ).toBe("Check edge cases before reviewing.");
+    ).toBeNull();
     expect(slot.navigateCalls).toEqual([]);
     await act(async () =>
       first
@@ -109,6 +140,7 @@ describe("item notes", () => {
       first.queryByRole("textbox", { name: "Notes for acme/widgets#42" }),
     ).toBeNull();
     slot.lifecycle.unmount();
+    itemNotes.clear();
 
     const reopened = mount();
     await act(async () => {});
@@ -133,9 +165,14 @@ describe("item notes", () => {
         { target: { value: "" } },
       ),
     );
-    expect(
-      window.localStorage.getItem(itemNoteKey("pr", "acme/widgets", 42)),
-    ).toBeNull();
+    await act(async () =>
+      fireEvent.focusOut(
+        restored.getByRole("textbox", { name: "Notes for acme/widgets#42" }),
+      ),
+    );
+    expect(serverNotes.get(itemNoteKey("pr", "acme/widgets", 42))?.body).toBe(
+      "",
+    );
     reopened.lifecycle.unmount();
   });
 });

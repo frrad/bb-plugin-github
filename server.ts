@@ -147,7 +147,33 @@ const syncProgressSchema = z
   .strict();
 type SyncProgress = z.infer<typeof syncProgressSchema>;
 
+const noteIdentitySchema = itemInputSchema.extend({
+  kind: z.enum(["issue", "pr"]),
+});
+const noteRecordSchema = z
+  .object({
+    body: z.string().max(100_000),
+    revision: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const githubRpcContract = defineRpcContract({
+  listNotes: {
+    input: z.null(),
+    output: z
+      .object({
+        notes: z.array(noteIdentitySchema.extend(noteRecordSchema.shape)),
+      })
+      .strict(),
+  },
+  saveNote: {
+    input: noteIdentitySchema.extend({
+      body: z.string().max(100_000),
+      revision: z.number().int().nonnegative(),
+      importOnly: z.boolean().optional(),
+    }),
+    output: z.object({ saved: z.boolean(), note: noteRecordSchema }).strict(),
+  },
   syncProgress: { input: z.null(), output: syncProgressSchema },
   status: {
     input: z.null(),
@@ -723,6 +749,11 @@ export default async function plugin(bb: BbPluginApi) {
        PRIMARY KEY (repo, kind, number)
      )`,
     `ALTER TABLE items ADD COLUMN assignees TEXT NOT NULL DEFAULT '[]'`,
+    `CREATE TABLE item_notes (
+       repo TEXT NOT NULL, kind TEXT NOT NULL, number INTEGER NOT NULL,
+       body TEXT NOT NULL, revision INTEGER NOT NULL,
+       PRIMARY KEY (repo, kind, number)
+     )`,
   ]);
 
   function parseStringArray(raw: unknown): string[] {
@@ -1133,6 +1164,45 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   bb.rpc.register(githubRpcContract, {
+    async listNotes() {
+      return githubRpcContract.listNotes.output.parse({
+        notes: db
+          .prepare(
+            "SELECT repo, kind, number, body, revision FROM item_notes ORDER BY repo, kind, number",
+          )
+          .all(),
+      });
+    },
+    async saveNote(input) {
+      const result = db.transaction(() => {
+        const stored = db
+          .prepare(
+            "SELECT body, revision FROM item_notes WHERE repo = ? AND kind = ? AND number = ?",
+          )
+          .get(input.repo, input.kind, input.number) as
+          | { body: string; revision: number }
+          | undefined;
+        const current = stored ?? { body: "", revision: 0 };
+        if (
+          (input.importOnly && stored !== undefined) ||
+          (!input.importOnly && input.revision !== current.revision)
+        ) {
+          return { saved: false, note: current };
+        }
+        const note = { body: input.body, revision: current.revision + 1 };
+        db.prepare(
+          "INSERT INTO item_notes (repo, kind, number, body, revision) VALUES (?, ?, ?, ?, ?) ON CONFLICT(repo, kind, number) DO UPDATE SET body = excluded.body, revision = excluded.revision",
+        ).run(input.repo, input.kind, input.number, note.body, note.revision);
+        return { saved: true, note };
+      })();
+      if (result.saved)
+        bb.realtime.publish("notes-changed", {
+          repo: input.repo,
+          kind: input.kind,
+          number: input.number,
+        });
+      return result;
+    },
     async syncProgress() {
       return syncProgress;
     },
