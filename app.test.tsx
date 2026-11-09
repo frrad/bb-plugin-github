@@ -796,7 +796,7 @@ describe("GitHub app navigation", () => {
       { text: url },
     ]);
     expect(slot.navigateCalls).toEqual([]);
-    const bolt = slot.getByText(/⚡ thread/);
+    const bolt = slot.getByText("⚡");
     expect(bolt.getAttribute("title")).toBe("Existing review thread");
     await act(async () => bolt.click());
     expect(slot.navigateCalls).toContainEqual({

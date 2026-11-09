@@ -293,10 +293,11 @@ function ThreadPills({ links }: { links: ThreadLink[] | undefined }) {
   if (links === undefined || links.length === 0) return null;
   return (
     <span className="flex shrink-0 items-center gap-1">
-      {links.map((link, index) => (
+      {links.map((link) => (
         <Badge
           key={link.threadId}
           title={link.title ?? `Open BB thread ${link.threadId}`}
+          aria-label={`Open thread: ${link.title ?? link.threadId}`}
           onClick={(event) => {
             event.stopPropagation();
             navigate.toThread(link.threadId);
@@ -304,7 +305,7 @@ function ThreadPills({ links }: { links: ThreadLink[] | undefined }) {
           variant="secondary"
           className="cursor-pointer whitespace-nowrap hover:bg-accent"
         >
-          ⚡ thread{links.length > 1 ? ` ${index + 1}` : ""}
+          ⚡
         </Badge>
       ))}
     </span>
