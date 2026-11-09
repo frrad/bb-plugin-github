@@ -672,8 +672,11 @@ function ItemRow({
         <span className="min-w-0 flex-1 line-clamp-3 text-sm font-medium leading-snug text-foreground @[48rem]:line-clamp-1 @[48rem]:leading-normal">
           {item.title}
         </span>
-        <span className="text-xs text-muted-foreground @[48rem]:hidden">
-          {item.repo}
+        <span
+          className="text-xs text-muted-foreground @[48rem]:hidden"
+          title={item.repo}
+        >
+          {item.repo.split("/").pop()}
         </span>
         <LabelChips
           labels={item.labels}
@@ -691,7 +694,7 @@ function ItemRow({
           className={`${COL.repo} text-xs text-muted-foreground @[48rem]:order-3`}
           title={item.repo}
         >
-          {item.repo}
+          {item.repo.split("/").pop()}
         </span>
         <span
           className={`${COL.assignee} ${item.assignees.length === 0 ? "hidden @[48rem]:flex" : "flex"} text-xs text-muted-foreground @[48rem]:order-4`}

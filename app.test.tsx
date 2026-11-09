@@ -483,7 +483,7 @@ describe("GitHub app navigation", () => {
     expect(await slot.findByText("Repo")).toBeTruthy();
     expect(
       slot
-        .getAllByText("get-bb/bb")
+        .getAllByText("bb")
         .some((cell) => cell.getAttribute("title") === "get-bb/bb"),
     ).toBe(true);
     const github = await slot.findByRole("link", { name: "GitHub" });
