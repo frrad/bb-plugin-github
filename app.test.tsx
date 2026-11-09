@@ -227,6 +227,11 @@ describe("Slack reference field", () => {
       );
     const slot = mount();
     await slot.findByText("A PR with a discussion");
+    expect(
+      slot.queryByRole("link", {
+        name: "Open Slack thread for acme/widgets#42",
+      }),
+    ).toBeNull();
     await act(async () =>
       slot
         .getByRole("button", { name: "Show notes for acme/widgets#42" })
@@ -270,6 +275,17 @@ describe("Slack reference field", () => {
     slot.lifecycle.unmount();
     panelCache.slackLinks.clear();
     const reopened = mount();
+    const slackBadge = await reopened.findByRole("link", {
+      name: "Open Slack thread for acme/widgets#42",
+    });
+    expect(slackBadge.getAttribute("href")).toBe(url);
+    expect(slackBadge.getAttribute("target")).toBe("_blank");
+    await act(async () => fireEvent.click(slackBadge));
+    expect(
+      reopened.queryByRole("textbox", {
+        name: "Notes for acme/widgets#42",
+      }),
+    ).toBeNull();
     await act(async () =>
       reopened
         .getByRole("button", { name: "Show notes for acme/widgets#42" })
@@ -281,6 +297,11 @@ describe("Slack reference field", () => {
     );
     expect(saved).toBeNull();
     expect(reopened.queryByRole("link", { name: "Open in Slack" })).toBeNull();
+    expect(
+      reopened.queryByRole("link", {
+        name: "Open Slack thread for acme/widgets#42",
+      }),
+    ).toBeNull();
     reopened.lifecycle.unmount();
   });
 });

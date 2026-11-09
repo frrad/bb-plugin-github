@@ -682,7 +682,7 @@ function useNotesTransport(): NotesTransport {
   );
 }
 
-function SlackLinkField({ item }: { item: Item }) {
+function useSlackLinks() {
   const rpc = useRpc<typeof githubRpcContract>();
   const cache = panelCache.slackLinks;
   const state = useSyncExternalStore(cache.subscribe, cache.getSnapshot);
@@ -690,6 +690,18 @@ function SlackLinkField({ item }: { item: Item }) {
     () => rpc.call("listSlackLinks").then((result) => result.links),
     [rpc],
   );
+  useEffect(() => {
+    void cache.refresh(load);
+  }, [cache, load]);
+  useRealtime("slack-links-changed", () => {
+    void cache.refresh(load, true);
+  });
+  return { cache, state, load };
+}
+
+function SlackLinkField({ item }: { item: Item }) {
+  const rpc = useRpc<typeof githubRpcContract>();
+  const { cache, state, load } = useSlackLinks();
   const stored =
     state.data?.find(
       (link) =>
@@ -704,12 +716,6 @@ function SlackLinkField({ item }: { item: Item }) {
   const [error, setError] = useState<string | null>(null);
   const dirty = useRef(false);
   const id = useId();
-  useEffect(() => {
-    void cache.refresh(load);
-  }, [cache, load]);
-  useRealtime("slack-links-changed", () => {
-    void cache.refresh(load, true);
-  });
   useEffect(() => {
     if (!dirty.current) {
       setUrl(stored ?? "");
@@ -793,7 +799,19 @@ function SlackLinkField({ item }: { item: Item }) {
               disabled={saving}
               onClick={() => setEditing((value) => !value)}
             >
-              <Icon name="Pencil" />
+              <svg
+                viewBox="0 0 24 24"
+                className="size-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m16 3 5 5-12 12-6 1 1-6Z" />
+                <path d="m14 5 5 5" />
+              </svg>
             </Button>
             <Button
               type="button"
@@ -880,10 +898,12 @@ function SlackLinkField({ item }: { item: Item }) {
 function ItemRow({
   item,
   links,
+  slackUrl,
   onOpen,
 }: {
   item: Item;
   links: ThreadLink[] | undefined;
+  slackUrl?: string;
   onOpen: () => void;
 }) {
   const { spawn, spawningKey } = useSpawn();
@@ -947,6 +967,19 @@ function ItemRow({
               className="hidden shrink-0 @[60rem]:flex"
             />
             <ThreadPills links={links} />
+            {slackUrl ? (
+              <a
+                href={slackUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Open Slack thread for ${item.repo}#${item.number}`}
+                title="Open Slack thread"
+                className="inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-white shadow-sm hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <SlackLogo className="size-3.5" />
+              </a>
+            ) : null}
           </span>
         </span>
         <span
@@ -1199,6 +1232,17 @@ function ItemsTable({
   onPreferencesChange: (preferences: TablePreferences) => void;
 }) {
   const links = useLinks();
+  const { state: slackState } = useSlackLinks();
+  const slackLinks = useMemo(
+    () =>
+      new Map(
+        (slackState.data ?? []).map((link) => [
+          itemNoteKey(link.kind, link.repo, link.number),
+          link.url,
+        ]),
+      ),
+    [slackState.data],
+  );
   const [preview, setPreview] = useState<Partial<Record<TableColumn, number>>>(
     {},
   );
@@ -1264,6 +1308,9 @@ function ItemsTable({
             key={`${item.repo}#${item.number}`}
             item={item}
             links={links[`${kind}:${item.repo}#${item.number}`]}
+            slackUrl={slackLinks.get(
+              itemNoteKey(item.kind, item.repo, item.number),
+            )}
             onOpen={() => onOpenItem(item.repo, item.number)}
           />
         ))}
