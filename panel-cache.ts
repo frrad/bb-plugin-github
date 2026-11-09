@@ -69,5 +69,20 @@ export const panelCache = {
   status:
     createReadCache<PluginRpcResult<(typeof githubRpcContract)["status"]>>(),
   viewer: createReadCache<string>(),
-  sync: createReadCache<boolean>(),
+  sync: createReadCache<number>(),
 };
+
+const MAX_SYNC_AGE_MS = 10 * 60_000;
+
+export function isSyncStale(
+  lastSyncedAt: string | null | undefined,
+  localSyncedAt: number | null,
+  now = Date.now(),
+): boolean {
+  const serverTime = lastSyncedAt ? Date.parse(lastSyncedAt) : NaN;
+  const latest = Math.max(
+    Number.isFinite(serverTime) && serverTime <= now ? serverTime : -Infinity,
+    localSyncedAt !== null && localSyncedAt <= now ? localSyncedAt : -Infinity,
+  );
+  return now - latest >= MAX_SYNC_AGE_MS;
+}

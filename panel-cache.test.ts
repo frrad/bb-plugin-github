@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createReadCache } from "./panel-cache";
+import { createReadCache, isSyncStale } from "./panel-cache";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -61,5 +61,30 @@ describe("panel read cache", () => {
     expect(fresh).toHaveBeenCalledTimes(1);
     expect(cache.getSnapshot().data).toEqual(["fresh"]);
     expect(cache.getSnapshot().refreshing).toBe(false);
+  });
+});
+
+describe("automatic sync freshness", () => {
+  const now = Date.parse("2026-01-01T12:00:00Z");
+  it("uses the most recent successful sync from the server or this window", () => {
+    expect(isSyncStale(new Date(now - 599_999).toISOString(), null, now)).toBe(
+      false,
+    );
+    expect(isSyncStale(new Date(now - 600_000).toISOString(), null, now)).toBe(
+      true,
+    );
+    expect(
+      isSyncStale(new Date(now - 900_000).toISOString(), now - 1_000, now),
+    ).toBe(false);
+    expect(
+      isSyncStale(new Date(now - 1_000).toISOString(), now - 900_000, now),
+    ).toBe(false);
+  });
+  it("refreshes when there is no usable timestamp", () => {
+    expect(isSyncStale(null, null, now)).toBe(true);
+    expect(isSyncStale("invalid", null, now)).toBe(true);
+    expect(isSyncStale(new Date(now + 60_000).toISOString(), null, now)).toBe(
+      true,
+    );
   });
 });

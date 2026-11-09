@@ -67,14 +67,15 @@ repository’s cached rows.
 Batching reduces list-fetch process invocations from four to one per repository
 (75%). This does not measure GraphQL rate-limit point savings.
 Background data may take 15 minutes plus sync time to refresh. Opening the panel
-also starts a background GitHub sync. While this app window stays open, previously
+starts a background GitHub sync only if the last successful sync is at least ten
+minutes old (or no sync time is known). While this app window stays open, previously
 loaded rows, repository status, and thread links are kept in memory so returning
 to the page shows cached results immediately. Reads revalidate in the background;
 failed reads retain the previous results.
 
-The existing Refresh button, the `refresh` RPC, or `bb github-fred sync` starts a
-sync immediately. The button spins until the GitHub sync and list revalidation
-finish; this can take longer than showing cached rows because it queries each
+The existing Refresh button, the `refresh` RPC, or `bb github-fred sync` always
+starts a sync immediately, regardless of data age. The button spins until the
+GitHub sync and list revalidation finish; this can take longer than showing cached rows because it queries each
 tracked repository. Automatic and manual page refreshes share in-flight work.
 
 Transient authentication failures and failures across all repositories retain

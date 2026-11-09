@@ -55,7 +55,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { panelCache } from "./panel-cache.js";
+import { panelCache, isSyncStale } from "./panel-cache.js";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
 import {
@@ -2045,6 +2045,7 @@ function useRefresh() {
     () =>
       panelCache.sync.refresh(async () => {
         await rpc.call("refresh");
+        const syncedAt = Date.now();
         // Also reconcile directly, in case the realtime sync signal was missed.
         await Promise.all([
           panelCache.issues.refresh(
@@ -2067,11 +2068,28 @@ function useRefresh() {
             true,
           ),
         ]);
-        return true;
+        return syncedAt;
       }),
     [rpc],
   );
-  return { refresh, syncing: state.refreshing, failed: state.error !== null };
+  const refreshIfStale = useCallback(async () => {
+    // Read the server timestamp first, including syncs from other windows or the service.
+    await panelCache.status.refresh(() => rpc.call("status"));
+    if (
+      isSyncStale(
+        panelCache.status.getSnapshot().data?.lastSyncedAt,
+        panelCache.sync.getSnapshot().data,
+      )
+    ) {
+      await refresh();
+    }
+  }, [rpc, refresh]);
+  return {
+    refresh,
+    refreshIfStale,
+    syncing: state.refreshing,
+    failed: state.error !== null,
+  };
 }
 
 function PanelHeader() {
@@ -2119,10 +2137,10 @@ const DEFAULT_QUERY = "is:open ";
 function GithubPanel({ subPath }: PluginNavPanelProps) {
   const [route, navigate] = useSubPathRoute(subPath);
   const { status } = useStatus();
-  const { refresh } = useRefresh();
+  const { refreshIfStale } = useRefresh();
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void refreshIfStale();
+  }, [refreshIfStale]);
   const [searches, setSearches] = useState<SavedSearch[]>(() => {
     let query = DEFAULT_QUERY;
     let kind: SavedSearch["kind"] = "issue";

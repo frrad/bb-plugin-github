@@ -15,6 +15,7 @@ beforeEach(() => {
 });
 
 describe("GitHub cached navigation", () => {
+  afterEach(() => vi.restoreAllMocks());
   const item = {
     repo: "acme/widgets",
     number: 42,
@@ -37,6 +38,8 @@ describe("GitHub cached navigation", () => {
   };
 
   it("renders cached rows immediately on return while revalidating and automatically syncing", async () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
     const first = renderSlot(
       app.navPanels[0]!,
       { subPath: "pulls" },
@@ -53,6 +56,7 @@ describe("GitHub cached navigation", () => {
     await first.findByText("Cached pull request");
     await act(async () => {});
     first.lifecycle.unmount();
+    clock.mockReturnValue(now + 10 * 60_000);
 
     let finishRead!: (value: { items: (typeof item)[] }) => void;
     let finishSync!: (value: { repos: number; items: number }) => void;
@@ -85,6 +89,58 @@ describe("GitHub cached navigation", () => {
     expect(reopened.getByText("Updated pull request")).toBeTruthy();
     expect(reopened.queryByText("Cached pull request")).toBeNull();
     reopened.lifecycle.unmount();
+  });
+
+  it("skips automatic GitHub sync for fresh data, syncs at ten minutes, and retries failures", async () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    const refresh = vi.fn(() => ({ repos: 1, items: 1 }));
+    const mount = () =>
+      renderSlot(
+        app.navPanels[0]!,
+        { subPath: "pulls" },
+        {
+          rpc: {
+            status: () => ({
+              ...status,
+              lastSyncedAt: new Date(now).toISOString(),
+            }),
+            listItems: () => ({ items: [item] }),
+            listLinks: () => ({ links: {} }),
+            viewer: () => ({ login: "octocat" }),
+            refresh,
+          },
+        },
+      );
+    const fresh = mount();
+    await act(async () => {});
+    expect(refresh).not.toHaveBeenCalled();
+    fresh.lifecycle.unmount();
+
+    clock.mockReturnValue(now + 9 * 60_000);
+    const stillFresh = mount();
+    await act(async () => {});
+    expect(refresh).not.toHaveBeenCalled();
+    stillFresh.lifecycle.unmount();
+
+    clock.mockReturnValue(now + 10 * 60_000);
+    refresh.mockImplementationOnce(() => {
+      throw new Error("offline");
+    });
+    const failed = mount();
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(1);
+    failed.lifecycle.unmount();
+
+    const retry = mount();
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(2);
+    retry.lifecycle.unmount();
+
+    const afterSuccess = mount();
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(2);
+    afterSuccess.lifecycle.unmount();
   });
 
   it("keeps cached rows visible when the revalidation fails", async () => {
