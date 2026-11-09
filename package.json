@@ -24,7 +24,8 @@
     "lib",
     "tsconfig.json",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "table-layout.ts"
   ],
   "engines": {
     "bb": ">=0.48.1",

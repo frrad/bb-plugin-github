@@ -14,6 +14,124 @@ beforeEach(() => {
   for (const cache of Object.values(panelCache)) cache.clear();
 });
 
+describe("GitHub table controls", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("sorts rows, drags widths, and restores each search's preferences", async () => {
+    const entries = [
+      { number: 20, title: "Charlie" },
+      { number: 3, title: "Alpha" },
+      { number: 10, title: "Beta" },
+    ].map((entry) => ({
+      ...entry,
+      repo: "acme/widgets",
+      kind: "pr",
+      state: "OPEN",
+      author: "octocat",
+      labels: [],
+      assignees: [],
+      url: `https://github.com/acme/widgets/pull/${entry.number}`,
+      body: "",
+      updatedAt: "2026-08-20T00:00:00.000Z",
+    }));
+    const mount = () =>
+      renderSlot(
+        app.navPanels[0]!,
+        { subPath: "pulls" },
+        {
+          rpc: {
+            status: () => ({
+              ghOk: true,
+              ghState: "ready",
+              ghError: null,
+              repos: [{ repo: "acme/widgets", projectId: null }],
+              lastSyncedAt: new Date().toISOString(),
+            }),
+            listItems: () => ({ items: entries }),
+            listLinks: () => ({ links: {} }),
+            viewer: () => ({ login: "octocat" }),
+          },
+        },
+      );
+    const slot = mount();
+    await slot.findByText("Charlie");
+    const section = slot.getByRole("region", { name: "My search" });
+    const titles = () =>
+      within(section)
+        .getAllByRole("row")
+        .slice(1)
+        .map((row) => {
+          return entries.find((entry) => row.textContent?.includes(entry.title))
+            ?.title;
+        });
+    expect(titles()).toEqual(["Charlie", "Alpha", "Beta"]);
+    await act(async () =>
+      within(section).getByRole("button", { name: "Title" }).click(),
+    );
+    expect(titles()).toEqual(["Alpha", "Beta", "Charlie"]);
+    expect(
+      within(section)
+        .getByRole("columnheader", { name: /Title/ })
+        .getAttribute("aria-sort"),
+    ).toBe("ascending");
+    await act(async () =>
+      within(section).getByRole("button", { name: /Title/ }).click(),
+    );
+    expect(titles()).toEqual(["Charlie", "Beta", "Alpha"]);
+    await act(async () =>
+      within(section).getByRole("button", { name: /Title/ }).click(),
+    );
+    expect(titles()).toEqual(["Charlie", "Alpha", "Beta"]);
+    await act(async () =>
+      within(section).getByRole("button", { name: "ID" }).click(),
+    );
+    expect(titles()).toEqual(["Alpha", "Beta", "Charlie"]);
+
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const handle = within(section).getByRole("separator", {
+      name: "Resize Repo column",
+    });
+    await act(async () =>
+      fireEvent.pointerDown(handle, { button: 0, clientX: 100 }),
+    );
+    await act(async () => fireEvent.pointerMove(handle, { clientX: 180 }));
+    expect(handle.getAttribute("aria-valuenow")).toBe("208");
+    await act(async () => fireEvent.pointerUp(handle));
+    const stored = JSON.parse(window.localStorage.getItem(SEARCHES_KEY)!);
+    expect(stored[0].table.widths.repo).toBe(208);
+    expect(stored[0].table.sort).toEqual({ column: "id", direction: "asc" });
+    await act(async () =>
+      slot.getByRole("button", { name: "Add search" }).click(),
+    );
+    const second = slot.getByRole("region", { name: "Search 2" });
+    expect(
+      within(second)
+        .getByRole("separator", { name: "Resize Repo column" })
+        .getAttribute("aria-valuenow"),
+    ).toBe("128");
+    slot.lifecycle.unmount();
+
+    const reopened = mount();
+    await act(async () => {});
+    const restored = reopened.getByRole("region", { name: "My search" });
+    const restoredHandle = within(restored).getByRole("separator", {
+      name: "Resize Repo column",
+    });
+    expect(restoredHandle.getAttribute("aria-valuenow")).toBe("208");
+    expect(
+      within(restored)
+        .getByRole("columnheader", { name: /ID/ })
+        .getAttribute("aria-sort"),
+    ).toBe("ascending");
+    await act(async () =>
+      fireEvent.keyDown(restoredHandle, { key: "ArrowLeft" }),
+    );
+    expect(restoredHandle.getAttribute("aria-valuenow")).toBe("192");
+    await act(async () => fireEvent.doubleClick(restoredHandle));
+    expect(restoredHandle.getAttribute("aria-valuenow")).toBe("128");
+    reopened.lifecycle.unmount();
+  });
+});
+
 describe("GitHub cached navigation", () => {
   afterEach(() => vi.restoreAllMocks());
   const item = {

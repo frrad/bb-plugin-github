@@ -1,9 +1,15 @@
+import {
+  parseTablePreferences,
+  type TablePreferences,
+} from "./table-layout.js";
+
 export interface SavedSearch {
   id: string;
   name: string;
   kind: "issue" | "pr";
   query: string;
   collapsed: boolean;
+  table?: TablePreferences;
 }
 
 export const SEARCHES_KEY = "bb-plugin-github-fred:searches";
@@ -30,12 +36,14 @@ export function parseSavedSearches(raw: string | null): SavedSearch[] | null {
       )
         return null;
       ids.add(entry.id);
+      const table = parseTablePreferences(entry.table);
       searches.push({
         id: entry.id,
         name: entry.name,
         kind: entry.kind,
         query: entry.query,
         collapsed: entry.collapsed,
+        ...(table !== undefined ? { table } : {}),
       });
     }
     return searches;

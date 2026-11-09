@@ -55,6 +55,15 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  TABLE_COLUMNS,
+  COLUMN_LABELS,
+  defaultWidths,
+  clampWidth,
+  sortItems,
+  type TableColumn,
+  type TablePreferences,
+} from "./table-layout.js";
 import { panelCache, isSyncStale } from "./panel-cache.js";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
@@ -498,17 +507,13 @@ function FilterBar({
 }
 
 const COL = {
-  id: "shrink-0 @[48rem]:w-12",
-  repo: "hidden w-32 shrink-0 truncate @[48rem]:block",
-  assignee: "shrink-0 @[48rem]:w-20",
-  status: "shrink-0 @[48rem]:w-24",
-  updated: "hidden w-14 shrink-0 text-right @[48rem]:block",
+  id: "min-w-0 truncate",
+  repo: "hidden min-w-0 truncate @[48rem]:block",
+  assignee: "min-w-0",
+  status: "min-w-0",
+  updated: "hidden min-w-0 truncate text-right @[48rem]:block",
   actions: "ml-auto flex shrink-0 items-center justify-end gap-1 @[48rem]:ml-0",
 } as const;
-
-function actionWidth(kind: "issue" | "pr") {
-  return kind === "pr" ? "@[48rem]:w-48" : "@[48rem]:w-24";
-}
 
 function AssigneeCell({ assignees }: { assignees: string[] }) {
   if (assignees.length === 0) {
@@ -665,10 +670,14 @@ function ItemRow({
   const busy = spawningKey === `${item.repo}#${item.number}`;
   return (
     <div
-      className="grid cursor-pointer grid-cols-1 gap-y-2 px-3 py-3 hover:bg-accent/50 @[48rem]:flex @[48rem]:items-center @[48rem]:gap-3 @[48rem]:py-2"
+      role="row"
+      className="grid cursor-pointer grid-cols-1 gap-y-2 px-3 py-3 hover:bg-accent/50 @[48rem]:grid @[48rem]:grid-cols-[var(--table-columns)] @[48rem]:items-center @[48rem]:gap-3 @[48rem]:py-2"
       onClick={onOpen}
     >
-      <span className="flex min-w-0 flex-col items-start gap-1.5 @[48rem]:order-2 @[48rem]:flex-1 @[48rem]:flex-row @[48rem]:items-center @[48rem]:gap-2">
+      <span
+        role="cell"
+        className="flex min-w-0 flex-col items-start gap-1.5 @[48rem]:order-2 @[48rem]:flex-1 @[48rem]:flex-row @[48rem]:items-center @[48rem]:gap-2"
+      >
         <span className="min-w-0 flex-1 line-clamp-3 text-sm font-medium leading-snug text-foreground @[48rem]:line-clamp-1 @[48rem]:leading-normal">
           {item.title}
         </span>
@@ -684,34 +693,39 @@ function ItemRow({
         />
         <ThreadPills links={links} />
       </span>
-      <span className="flex min-w-0 items-center gap-2 @[48rem]:contents">
+      <span
+        role="presentation"
+        className="flex min-w-0 items-center gap-2 @[48rem]:contents"
+      >
         <span
+          role="cell"
           className={`${COL.id} font-mono text-xs text-muted-foreground @[48rem]:order-1`}
         >
           #{item.number}
         </span>
         <span
+          role="cell"
           className={`${COL.repo} text-xs text-muted-foreground @[48rem]:order-3`}
           title={item.repo}
         >
           {item.repo.split("/").pop()}
         </span>
         <span
+          role="cell"
           className={`${COL.assignee} ${item.assignees.length === 0 ? "hidden @[48rem]:flex" : "flex"} text-xs text-muted-foreground @[48rem]:order-4`}
         >
           <AssigneeCell assignees={item.assignees} />
         </span>
-        <span className={`${COL.status} @[48rem]:order-5`}>
+        <span role="cell" className={`${COL.status} @[48rem]:order-5`}>
           <StatusCell item={item} />
         </span>
         <span
+          role="cell"
           className={`${COL.updated} text-xs text-muted-foreground @[48rem]:order-6`}
         >
           {relativeTime(item.updatedAt)}
         </span>
-        <span
-          className={`${COL.actions} ${actionWidth(item.kind)} @[48rem]:order-7`}
-        >
+        <span role="cell" className={`${COL.actions} @[48rem]:order-7`}>
           <Button
             size="sm"
             variant="outline"
@@ -768,14 +782,14 @@ function ItemRow({
   );
 }
 
-function TableSkeleton({ kind }: { kind: "issue" | "pr" }) {
+function TableSkeleton() {
   return (
     <DelayedLoading>
       <div className="divide-y divide-border">
         {[0, 1, 2, 3].map((row) => (
           <div
             key={row}
-            className="grid grid-cols-1 gap-y-3 px-3 py-3 @[48rem]:flex @[48rem]:items-center @[48rem]:gap-3"
+            className="grid grid-cols-1 gap-y-3 px-3 py-3 @[48rem]:grid @[48rem]:grid-cols-[var(--table-columns)] @[48rem]:items-center @[48rem]:gap-3"
           >
             <Skeleton className="h-3 w-4/5 @[48rem]:order-2 @[48rem]:flex-1" />
             <span className="flex items-center gap-2 @[48rem]:contents">
@@ -794,9 +808,7 @@ function TableSkeleton({ kind }: { kind: "issue" | "pr" }) {
               <span className={`${COL.updated} @[48rem]:order-6`}>
                 <Skeleton className="ml-auto h-3 w-12" />
               </span>
-              <span
-                className={`${COL.actions} ${actionWidth(kind)} @[48rem]:order-7`}
-              >
+              <span className={`${COL.actions} @[48rem]:order-7`}>
                 <Skeleton className="h-7 w-20" />
               </span>
             </span>
@@ -825,20 +837,65 @@ function ItemsTable({
   error,
   hasFilter,
   onOpenItem,
+  preferences,
+  onPreferencesChange,
 }: {
   kind: "issue" | "pr";
   items: Item[] | null;
   error: string | null;
   hasFilter: boolean;
   onOpenItem: (repo: string, number: number) => void;
+  preferences?: TablePreferences;
+  onPreferencesChange: (preferences: TablePreferences) => void;
 }) {
   const links = useLinks();
+  const [preview, setPreview] = useState<Partial<Record<TableColumn, number>>>(
+    {},
+  );
+  const drag = useRef<{
+    column: TableColumn;
+    startX: number;
+    startWidth: number;
+    width: number;
+  } | null>(null);
+  const widths = { ...defaultWidths(kind), ...preferences?.widths, ...preview };
+  for (const column of TABLE_COLUMNS)
+    widths[column] = clampWidth(column, widths[column], kind);
+  const columns = TABLE_COLUMNS.map((column) =>
+    column === "title" &&
+    preferences?.widths?.title === undefined &&
+    preview.title === undefined
+      ? "minmax(120px, 1fr)"
+      : `${widths[column]}px`,
+  ).join(" ");
+  const minimum = TABLE_COLUMNS.reduce(
+    (total, column) =>
+      total +
+      (column === "title" &&
+      preferences?.widths?.title === undefined &&
+      preview.title === undefined
+        ? 120
+        : widths[column]),
+    24 + 6 * 12,
+  );
+  const sorted = useMemo(
+    () => (items === null ? null : sortItems(items, preferences?.sort)),
+    [items, preferences?.sort],
+  );
+  const saveWidth = (column: TableColumn, width: number) =>
+    onPreferencesChange({
+      ...preferences,
+      widths: {
+        ...preferences?.widths,
+        [column]: clampWidth(column, width, kind),
+      },
+    });
 
   let body: React.ReactNode;
   if (error !== null && items === null) {
     body = <EmptyState message={error} />;
   } else if (items === null) {
-    body = <TableSkeleton kind={kind} />;
+    body = <TableSkeleton />;
   } else if (items.length === 0) {
     body = (
       <EmptyState
@@ -852,7 +909,7 @@ function ItemsTable({
   } else {
     body = (
       <div className="divide-y divide-border">
-        {items.map((item) => (
+        {sorted!.map((item) => (
           <ItemRow
             key={`${item.repo}#${item.number}`}
             item={item}
@@ -865,22 +922,151 @@ function ItemsTable({
   }
 
   return (
-    <div className="@container overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden items-center gap-3 border-b border-border bg-muted/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:flex">
-        <span className={COL.id}>ID</span>
-        <span className="min-w-0 flex-1">Title</span>
-        <span className={COL.repo}>Repo</span>
-        <span className={COL.assignee}>Assignee</span>
-        <span className={COL.status}>Status</span>
-        <span className={COL.updated}>Updated</span>
-        <span className={`${COL.actions} ${actionWidth(kind)}`} />
+    <div
+      role="table"
+      className="@container overflow-hidden rounded-lg border border-border bg-card"
+      style={
+        {
+          "--table-columns": columns,
+          "--table-min-width": `${minimum}px`,
+        } as React.CSSProperties
+      }
+    >
+      <div className="overflow-x-auto">
+        <div className="@[48rem]:min-w-[var(--table-min-width)]">
+          <div
+            role="row"
+            className="hidden grid-cols-[var(--table-columns)] items-center gap-3 border-b border-border bg-muted/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:grid"
+          >
+            {TABLE_COLUMNS.map((column) => (
+              <div
+                key={column}
+                role="columnheader"
+                aria-sort={
+                  column === preferences?.sort?.column
+                    ? preferences.sort.direction === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : "none"
+                }
+                className="relative min-w-0"
+              >
+                {column === "actions" ? (
+                  <span className="sr-only">Actions</span>
+                ) : (
+                  <button
+                    className="flex w-full min-w-0 items-center gap-1 truncate rounded py-1 text-left uppercase hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    onClick={() => {
+                      const current = preferences?.sort;
+                      const sort =
+                        current?.column !== column
+                          ? { column, direction: "asc" as const }
+                          : current.direction === "asc"
+                            ? { column, direction: "desc" as const }
+                            : undefined;
+                      onPreferencesChange({ ...preferences, sort });
+                    }}
+                  >
+                    {COLUMN_LABELS[column]}
+                    {preferences?.sort?.column === column ? (
+                      <span aria-hidden="true">
+                        {preferences.sort.direction === "asc" ? "↑" : "↓"}
+                      </span>
+                    ) : null}
+                  </button>
+                )}
+                <div
+                  role="separator"
+                  tabIndex={0}
+                  aria-label={`Resize ${COLUMN_LABELS[column]} column`}
+                  aria-orientation="vertical"
+                  title="Drag to resize; double-click to reset. Arrow keys also resize."
+                  aria-valuemin={clampWidth(column, 0, kind)}
+                  aria-valuemax={1200}
+                  aria-valuenow={widths[column]}
+                  className="absolute -right-2 top-0 h-full w-2 cursor-col-resize touch-none select-none border-r border-border hover:border-foreground focus-visible:border-foreground focus-visible:outline-none"
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const width =
+                      event.currentTarget.parentElement?.getBoundingClientRect()
+                        .width || widths[column];
+                    drag.current = {
+                      column,
+                      startX: event.clientX,
+                      startWidth: width,
+                      width,
+                    };
+                    event.currentTarget.setPointerCapture?.(event.pointerId);
+                  }}
+                  onPointerMove={(event) => {
+                    const active = drag.current;
+                    if (!active || active.column !== column) return;
+                    active.width = clampWidth(
+                      column,
+                      active.startWidth + event.clientX - active.startX,
+                      kind,
+                    );
+                    setPreview({ [column]: active.width });
+                  }}
+                  onPointerUp={(event) => {
+                    const active = drag.current;
+                    if (!active || active.column !== column) return;
+                    drag.current = null;
+                    saveWidth(column, active.width);
+                    setPreview({});
+                    if (
+                      event.currentTarget.hasPointerCapture?.(event.pointerId)
+                    )
+                      event.currentTarget.releasePointerCapture(
+                        event.pointerId,
+                      );
+                  }}
+                  onPointerCancel={() => {
+                    drag.current = null;
+                    setPreview({});
+                  }}
+                  onLostPointerCapture={() => {
+                    drag.current = null;
+                    setPreview({});
+                  }}
+                  onDoubleClick={() => {
+                    const next = { ...preferences?.widths };
+                    delete next[column];
+                    onPreferencesChange({ ...preferences, widths: next });
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key !== "ArrowLeft" &&
+                      event.key !== "ArrowRight" &&
+                      event.key !== "Home"
+                    )
+                      return;
+                    event.preventDefault();
+                    saveWidth(
+                      column,
+                      event.key === "Home"
+                        ? defaultWidths(kind)[column]
+                        : widths[column] +
+                            (event.key === "ArrowRight" ? 16 : -16),
+                    );
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          {error !== null && items !== null ? (
+            <p
+              role="status"
+              className="px-3 py-2 text-xs text-muted-foreground"
+            >
+              Showing cached results. Could not refresh: {error}
+            </p>
+          ) : null}
+          {body}
+        </div>
       </div>
-      {error !== null && items !== null ? (
-        <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
-          Showing cached results. Could not refresh: {error}
-        </p>
-      ) : null}
-      {body}
     </div>
   );
 }
@@ -2502,6 +2688,8 @@ function SearchSection({
           items={filtered}
           error={error}
           hasFilter={search.query.trim().length > 0}
+          preferences={search.table}
+          onPreferencesChange={(table) => onChange({ table })}
           onOpenItem={onOpenItem}
         />
       </div>
