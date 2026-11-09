@@ -428,7 +428,7 @@ function FilterBar({
   };
 
   return (
-    <div className="relative">
+    <div className="group/filter relative">
       <input
         ref={inputRef}
         value={value}
@@ -444,13 +444,13 @@ function FilterBar({
         onKeyDown={onKeyDown}
         aria-label="Search filter"
         placeholder="Filter — is:open assignee:@me label:bug, or plain text"
-        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 pr-8 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex h-8 w-full rounded-md border border-transparent bg-transparent px-3 py-1 pr-8 text-sm transition-colors placeholder:text-muted-foreground hover:border-input focus-visible:border-input focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         spellCheck={false}
         autoComplete="off"
       />
       {value.length > 0 ? (
         <button
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/filter:opacity-100 group-focus-within/filter:opacity-100"
           onMouseDown={(event) => {
             event.preventDefault();
             onChange("");
@@ -2366,17 +2366,23 @@ function SearchSection({
           className="h-8 min-w-0 flex-1 border-transparent font-medium shadow-none hover:border-input @min-[48rem]/search-section:w-40 @min-[48rem]/search-section:flex-none"
           onChange={(event) => onChange({ name: event.target.value })}
         />
-        <select
-          aria-label="Search type"
-          value={search.kind}
-          onChange={(event) =>
-            onChange({ kind: event.target.value === "pr" ? "pr" : "issue" })
-          }
-          className="h-8 max-w-36 shrink-0 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          <option value="issue">Issues</option>
-          <option value="pr">Pull requests</option>
-        </select>
+        <div className="group/search-type relative shrink-0">
+          <select
+            aria-label="Search type"
+            value={search.kind}
+            onChange={(event) =>
+              onChange({ kind: event.target.value === "pr" ? "pr" : "issue" })
+            }
+            className="h-8 max-w-36 cursor-pointer appearance-none rounded-md border border-transparent bg-transparent pl-2 pr-7 text-xs transition-colors hover:border-input focus-visible:border-input focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="issue">Issues</option>
+            <option value="pr">Pull requests</option>
+          </select>
+          <Icon
+            name="ChevronDown"
+            className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground opacity-0 transition-opacity group-hover/search-type:opacity-100 group-focus-within/search-type:opacity-100"
+          />
+        </div>
         <div className="order-last min-w-0 basis-full @min-[48rem]/search-section:order-none @min-[48rem]/search-section:flex-1 @min-[48rem]/search-section:basis-64">
           <FilterBar
             value={search.query}
