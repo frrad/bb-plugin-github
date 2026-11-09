@@ -1,4 +1,4 @@
-import type { Item } from "./app-logic.js";
+import { itemDisplayState, type Item } from "./app-logic.js";
 
 export const TABLE_COLUMNS = [
   "id",
@@ -105,7 +105,7 @@ export function sortItems(
       case "assignee":
         return item.assignees.join(", ");
       case "status":
-        return item.state;
+        return itemDisplayState(item);
       case "title":
         return item.title;
     }

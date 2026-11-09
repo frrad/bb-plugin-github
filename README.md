@@ -21,6 +21,8 @@ bb plugin install https://github.com/frrad/bb-plugin-github
   types, order, and collapsed state are remembered in this browser. Your
   previous single search becomes the first section automatically. Direct issue
   and PR links still open their details. Issue searches include a New issue form.
+  The Status column shows draft PRs in gray; published PRs show Open, while merged
+  and closed PRs retain those statuses. Drafts still match `is:open` searches.
   Click a column header to cycle ascending, descending, and original order.
   Drag the divider at a header's right edge to resize that column; double-click
   it to reset its width. Focus a divider and use the arrow keys to resize with

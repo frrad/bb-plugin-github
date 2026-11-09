@@ -740,6 +740,7 @@ describe("GitHub app navigation", () => {
                 kind: "pr",
                 title: "A pull request",
                 state: "OPEN",
+                isDraft: true,
                 author: "octocat",
                 labels: [],
                 assignees: [],
@@ -767,6 +768,7 @@ describe("GitHub app navigation", () => {
         .getAllByText("bb")
         .some((cell) => cell.getAttribute("title") === "get-bb/bb"),
     ).toBe(true);
+    expect(await slot.findByText("draft")).toBeTruthy();
     const github = await slot.findByRole("link", { name: "GitHub" });
     expect(github.getAttribute("href")).toBe(url);
     expect(github.getAttribute("target")).toBe("_blank");

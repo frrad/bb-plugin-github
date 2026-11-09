@@ -45,6 +45,7 @@ const itemSchema = z
     kind: z.enum(["issue", "pr"]),
     title: z.string(),
     state: z.string(),
+    isDraft: z.boolean().optional(),
     author: z.string(),
     labels: z.array(z.string()),
     assignees: z.array(z.string()),
@@ -468,6 +469,7 @@ const listNodeSchema = z.object({
   number: itemNumberSchema,
   title: z.string(),
   state: z.enum(["OPEN", "CLOSED", "MERGED"]),
+  isDraft: z.boolean().optional(),
   author: z.object({ login: z.string(), id: z.string().optional() }).nullable(),
   labels: z.object({ nodes: z.array(z.object({ name: z.string() })).max(100) }),
   assignees: z.object({
@@ -493,12 +495,22 @@ const repositoryListsSchema = z.object({
       }),
       openPrs: z.object({
         nodes: z
-          .array(listNodeSchema.extend({ state: z.literal("OPEN") }))
+          .array(
+            listNodeSchema.extend({
+              state: z.literal("OPEN"),
+              isDraft: z.boolean(),
+            }),
+          )
           .max(PR_PAGE),
       }),
       closedPrs: z.object({
         nodes: z
-          .array(listNodeSchema.extend({ state: z.enum(["CLOSED", "MERGED"]) }))
+          .array(
+            listNodeSchema.extend({
+              state: z.enum(["CLOSED", "MERGED"]),
+              isDraft: z.boolean(),
+            }),
+          )
           .max(CLOSED_PR_PAGE),
       }),
     }),
@@ -521,10 +533,10 @@ const repositoryListsQuery = `query RepositoryLists($owner: String!, $name: Stri
       nodes { ${listFields} }
     }
     openPrs: pullRequests(first: ${PR_PAGE}, states: [OPEN], orderBy: {field: CREATED_AT, direction: DESC}) {
-      nodes { ${listFields} }
+      nodes { ${listFields} isDraft }
     }
     closedPrs: pullRequests(first: ${CLOSED_PR_PAGE}, states: [CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
-      nodes { ${listFields} }
+      nodes { ${listFields} isDraft }
     }
   }
 }`;
@@ -559,6 +571,7 @@ async function fetchRepoItems(
       kind,
       title: entry.title,
       state: entry.state,
+      ...(kind === "pr" && entry.isDraft ? { isDraft: true } : {}),
       author: entry.author?.id
         ? entry.author.login
         : `app/${entry.author?.login ?? ""}`,
@@ -754,6 +767,7 @@ export default async function plugin(bb: BbPluginApi) {
        body TEXT NOT NULL, revision INTEGER NOT NULL,
        PRIMARY KEY (repo, kind, number)
      )`,
+    `ALTER TABLE items ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0`,
   ]);
 
   function parseStringArray(raw: unknown): string[] {
@@ -771,6 +785,7 @@ export default async function plugin(bb: BbPluginApi) {
       kind: row.kind === "pr" ? "pr" : "issue",
       title: String(row.title),
       state: String(row.state),
+      ...(row.is_draft === 1 ? { isDraft: true } : {}),
       author: String(row.author),
       labels: parseStringArray(row.labels),
       assignees: parseStringArray(row.assignees),
@@ -834,8 +849,8 @@ export default async function plugin(bb: BbPluginApi) {
 
   function replaceRepoRows(repo: string, items: CachedItem[]): void {
     const insert = db.prepare(
-      `INSERT INTO items (repo, number, kind, title, state, author, labels, assignees, url, body, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO items (repo, number, kind, title, state, author, labels, assignees, url, body, updated_at, is_draft)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     db.transaction(() => {
       db.prepare("DELETE FROM items WHERE repo = ?").run(repo);
@@ -852,6 +867,7 @@ export default async function plugin(bb: BbPluginApi) {
           item.url,
           item.body,
           item.updatedAt,
+          item.isDraft ? 1 : 0,
         );
       }
     })();
@@ -910,7 +926,7 @@ export default async function plugin(bb: BbPluginApi) {
     const before = JSON.stringify(
       db
         .prepare(
-          "SELECT repo, kind, number, updated_at FROM items ORDER BY repo, kind, number",
+          "SELECT repo, kind, number, updated_at, is_draft FROM items ORDER BY repo, kind, number",
         )
         .all(),
     );
@@ -954,7 +970,7 @@ export default async function plugin(bb: BbPluginApi) {
     const after = JSON.stringify(
       db
         .prepare(
-          "SELECT repo, kind, number, updated_at FROM items ORDER BY repo, kind, number",
+          "SELECT repo, kind, number, updated_at, is_draft FROM items ORDER BY repo, kind, number",
         )
         .all(),
     );

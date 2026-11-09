@@ -23,6 +23,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import {
   buildSuggestions,
+  itemDisplayState,
   matchesQuery,
   parseQuery,
   parseSubPath,
@@ -256,6 +257,7 @@ function RefreshIcon({ className }: { className?: string }) {
 }
 
 function stateDotClass(kind: "issue" | "pr", state: string): string {
+  if (kind === "pr" && state === "DRAFT") return "bg-muted-foreground";
   if (state === "OPEN") return "bg-green-500";
   if (kind === "pr" && state === "MERGED") return "bg-purple-500";
   if (kind === "pr") return "bg-red-500";
@@ -272,7 +274,10 @@ function StateDot({ kind, state }: { kind: "issue" | "pr"; state: string }) {
 
 function StateBadge({ kind, state }: { kind: "issue" | "pr"; state: string }) {
   return (
-    <Badge variant="outline" className="gap-1.5 font-normal">
+    <Badge
+      variant="outline"
+      className={`gap-1.5 font-normal ${state === "DRAFT" ? "text-muted-foreground" : ""}`}
+    >
       <StateDot kind={kind} state={state} />
       {state.toLowerCase()}
     </Badge>
@@ -542,7 +547,7 @@ function StatusCell({ item }: { item: Item }) {
   const { setIssueState } = useIssueMutations();
   const [pending, setPending] = useState(false);
   if (item.kind === "pr") {
-    return <StateBadge kind="pr" state={item.state} />;
+    return <StateBadge kind="pr" state={itemDisplayState(item)} />;
   }
   const change = (next: "open" | "closed") => {
     if ((item.state === "OPEN") === (next === "open")) return;

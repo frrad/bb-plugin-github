@@ -32,6 +32,7 @@ function node(number: number, state = "OPEN") {
   return {
     number,
     state,
+    isDraft: false,
     title: `Title ${number}`,
     author: { login: "robot[bot]" },
     labels: { nodes: [{ name: "bug" }] },
@@ -219,3 +220,33 @@ it.each([
     ).toEqual({ n: 10 });
   },
 );
+
+it("caches draft flags and publishes changes when only draft status changes", async () => {
+  const repo = repository();
+  repo.openPrs.nodes[0].isDraft = true;
+  fake.responses.set("one", response(repo));
+  const { harness, bb } = await start();
+  await harness.behavior.callRpc("refresh");
+  const getOpenPrs = () =>
+    harness.behavior.callRpc("listItems", { kind: "pr", state: "open" });
+  expect(await getOpenPrs()).toMatchObject({
+    items: [{ state: "OPEN", isDraft: true }],
+  });
+  expect(
+    bb.storage
+      .database()
+      .prepare("SELECT is_draft FROM items WHERE kind = 'pr' AND number = 3")
+      .get(),
+  ).toEqual({ is_draft: 1 });
+  const changes = () =>
+    harness.realtimeSignals.filter(
+      (signal) => signal.channel === "data-changed",
+    ).length;
+  const before = changes();
+  repo.openPrs.nodes[0].isDraft = false;
+  fake.responses.set("one", response(repo));
+  await harness.behavior.callRpc("refresh");
+  expect(changes()).toBe(before + 1);
+  const result = githubRpcContract.listItems.output.parse(await getOpenPrs());
+  expect(result.items[0].isDraft ?? false).toBe(false);
+});

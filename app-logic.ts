@@ -5,6 +5,14 @@ export type Item = PluginRpcResult<
   (typeof githubRpcContract)["listItems"]
 >["items"][number];
 
+export function itemDisplayState(
+  item: Pick<Item, "kind" | "state" | "isDraft">,
+): string {
+  return item.kind === "pr" && item.state === "OPEN" && item.isDraft
+    ? "DRAFT"
+    : item.state;
+}
+
 export type Route =
   | { view: "issues" }
   | { view: "pulls" }

@@ -42,6 +42,7 @@ beforeEach(() => {
       number: 42,
       title: "Normalize pull details",
       state: "OPEN",
+      isDraft: false,
       author: { login: "bob", id: "user-bob" },
       labels: { nodes: [{ name: "enhancement" }] },
       assignees: { nodes: [] },

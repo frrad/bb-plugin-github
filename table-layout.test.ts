@@ -5,7 +5,12 @@ import {
   sortItems,
   type SortColumn,
 } from "./table-layout";
-import type { Item } from "./app-logic";
+import {
+  itemDisplayState,
+  matchesQuery,
+  parseQuery,
+  type Item,
+} from "./app-logic";
 import { parseSavedSearches } from "./saved-searches";
 
 const first: Item = {
@@ -83,4 +88,17 @@ describe("table preferences", () => {
       parseSavedSearches(JSON.stringify([{ ...search, table: "bad" }])),
     ).toEqual([search]);
   });
+});
+
+it("displays and sorts drafts separately while keeping them in open PR searches", () => {
+  const draft = { ...first, state: "OPEN", isDraft: true };
+  const ready = { ...second, isDraft: false };
+  expect(itemDisplayState(draft)).toBe("DRAFT");
+  expect(itemDisplayState(ready)).toBe("OPEN");
+  expect(itemDisplayState({ ...draft, state: "MERGED" })).toBe("MERGED");
+  expect(itemDisplayState({ ...draft, state: "CLOSED" })).toBe("CLOSED");
+  expect(matchesQuery(draft, parseQuery("is:open"), null)).toBe(true);
+  expect(
+    sortItems([ready, draft], { column: "status", direction: "asc" }),
+  ).toEqual([draft, ready]);
 });
