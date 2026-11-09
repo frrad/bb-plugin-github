@@ -750,7 +750,20 @@ describe("GitHub app navigation", () => {
               },
             ],
           }),
-          listLinks: () => ({ links: {} }),
+          listLinks: () => ({
+            links: {
+              "pr:get-bb/bb#42": [
+                {
+                  kind: "pr",
+                  repo: "get-bb/bb",
+                  number: 42,
+                  threadId: "existing-thread",
+                  title: "Existing review thread",
+                  createdAt: "2026-01-01T00:00:00Z",
+                },
+              ],
+            },
+          }),
           status: () => ({
             ghOk: true,
             ghState: "ready",
@@ -783,6 +796,13 @@ describe("GitHub app navigation", () => {
       { text: url },
     ]);
     expect(slot.navigateCalls).toEqual([]);
+    const bolt = slot.getByText(/⚡ thread/);
+    expect(bolt.getAttribute("title")).toBe("Existing review thread");
+    await act(async () => bolt.click());
+    expect(slot.navigateCalls).toContainEqual({
+      method: "toThread",
+      threadId: "existing-thread",
+    });
     slot.lifecycle.unmount();
   });
 

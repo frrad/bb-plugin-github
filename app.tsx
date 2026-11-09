@@ -151,6 +151,10 @@ function useLinks(): LinksMap {
   );
   useEffect(() => {
     void cache.refresh(load);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void cache.refresh(load);
+    }, 30_000);
+    return () => clearInterval(timer);
   }, [cache, load]);
   useRealtime("links-changed", () => {
     void cache.refresh(load, true);
@@ -292,7 +296,7 @@ function ThreadPills({ links }: { links: ThreadLink[] | undefined }) {
       {links.map((link, index) => (
         <Badge
           key={link.threadId}
-          title={`Open BB thread ${link.threadId}`}
+          title={link.title ?? `Open BB thread ${link.threadId}`}
           onClick={(event) => {
             event.stopPropagation();
             navigate.toThread(link.threadId);
@@ -300,7 +304,7 @@ function ThreadPills({ links }: { links: ThreadLink[] | undefined }) {
           variant="secondary"
           className="cursor-pointer whitespace-nowrap hover:bg-accent"
         >
-          ⚡ agent{links.length > 1 ? ` ${index + 1}` : ""}
+          ⚡ thread{links.length > 1 ? ` ${index + 1}` : ""}
         </Badge>
       ))}
     </span>
@@ -2413,11 +2417,11 @@ function useRefresh() {
             true,
           ),
           panelCache.status.refresh(() => rpc.call("status"), true),
-          panelCache.links.refresh(
-            () => rpc.call("listLinks").then((result) => result.links),
-            true,
-          ),
         ]);
+        void panelCache.links.refresh(
+          () => rpc.call("listLinks").then((result) => result.links),
+          true,
+        );
         return syncedAt;
       }),
     [rpc],

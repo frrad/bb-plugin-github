@@ -40,7 +40,13 @@ bb plugin install https://github.com/frrad/bb-plugin-github
   Deep-linkable via the URL hash: `#/issues/<owner>/<repo>/<number>`.
 - **Send agent / Review with agent**: spawns a BB worker thread on the issue
   (or a review thread on the PR) in the repo's BB project. The issue/PR then
-  shows a ⚡ pill linking to the thread.
+  shows a ⚡ pill linking to the thread. PR rows also discover existing visible,
+  non-archived threads through BB's current environment/branch → PR association.
+  Shared environments are queried once in batches of up to 200; hovering a bolt
+  shows the thread title. Native associations take precedence over outdated
+  explicit PR links, with explicit links retained as a fallback. The open panel
+  rechecks links about every 30 seconds and after thread lifecycle changes.
+  Issue links continue to come from Start actions.
 - **Homepage section**: recent open issues with the same Send agent buttons.
 - **Mentions**: `@` or `#` in any composer completes GitHub issues and PRs; the
   selected item's title/body/state is attached as agent context at send time.

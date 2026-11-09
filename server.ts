@@ -70,6 +70,7 @@ const threadLinkSchema = z
     repo: repoNameSchema,
     number: itemNumberSchema,
     threadId: z.string().min(1),
+    title: z.string().optional(),
     createdAt: z.string(),
   })
   .strict();
@@ -399,6 +400,22 @@ const environmentPullRequestUrlsSchema = z.record(
     z.object({ outcome: z.enum(["absent", "unavailable"]) }),
   ]),
 );
+
+function parsePullUrl(raw: unknown): { repo: string; number: number } | null {
+  if (typeof raw !== "string") return null;
+  try {
+    const url = new URL(raw);
+    const match = url.pathname.match(
+      /^\/([\w.-]+\/[\w.-]+)\/pull\/([1-9]\d*)\/?$/,
+    );
+    if (url.protocol !== "https:" || url.hostname !== "github.com" || !match)
+      return null;
+    const number = Number(match[2]);
+    return Number.isSafeInteger(number) ? { repo: match[1], number } : null;
+  } catch {
+    return null;
+  }
+}
 
 function run(
   file: string,
@@ -1056,6 +1073,142 @@ export default async function plugin(bb: BbPluginApi) {
     return result;
   }
 
+  type DiscoveredLinks = Record<string, ThreadLink[]>;
+  let linkCache: { at: number; links: DiscoveredLinks } | null = null;
+  let linkLookup: Promise<DiscoveredLinks> | null = null;
+  let linkGeneration = 0;
+  function invalidateThreadLinks() {
+    linkGeneration++;
+    linkCache = null;
+    bb.realtime.publish("links-changed", {});
+  }
+  for (const event of [
+    "thread.created",
+    "thread.idle",
+    "thread.archived",
+    "thread.unarchived",
+    "thread.deleted",
+  ] as const) {
+    bb.events.on(event, invalidateThreadLinks);
+  }
+  async function scanThreadLinks(): Promise<DiscoveredLinks> {
+    const threads: Awaited<ReturnType<typeof bb.sdk.threads.list>> = [];
+    for (let offset = 0; ; ) {
+      const page = await bb.sdk.threads.list({
+        archived: false,
+        includeHidden: false,
+        limit: 200,
+        offset,
+      });
+      threads.push(...page);
+      offset += page.length;
+      if (page.length < 200) break;
+    }
+    const byEnvironment = new Map<string, typeof threads>();
+    for (const thread of threads) {
+      if (
+        !thread.environmentId ||
+        thread.archivedAt !== null ||
+        thread.deletedAt !== null ||
+        thread.visibility === "hidden"
+      )
+        continue;
+      const group = byEnvironment.get(thread.environmentId) ?? [];
+      group.push(thread);
+      byEnvironment.set(thread.environmentId, group);
+    }
+    const environments = [...byEnvironment.keys()];
+    const repos = new Map(
+      listCachedItems({ kind: "pr" }).map((item) => [
+        item.repo.toLowerCase(),
+        item.repo,
+      ]),
+    );
+    const result: DiscoveredLinks = {};
+    for (let offset = 0; offset < environments.length; offset += 200) {
+      const keys = environments.slice(offset, offset + 200);
+      try {
+        const rows = await bb.sdk.plugins.callRpc({
+          pluginId: "bb--github-pr-status",
+          method: "pullRequests",
+          input: { keys },
+          outputSchema: environmentPullRequestUrlsSchema,
+        });
+        for (const environmentId of keys) {
+          const row = rows[environmentId];
+          const pull = parsePullUrl(
+            row?.outcome === "available" ? row.pullRequest.url : null,
+          );
+          if (!pull) continue;
+          const repo = repos.get(pull.repo.toLowerCase()) ?? pull.repo;
+          const key = `pr:${repo}#${pull.number}`;
+          for (const thread of byEnvironment.get(environmentId) ?? []) {
+            const links = (result[key] ??= []);
+            if (links.some((link) => link.threadId === thread.id)) continue;
+            const title = thread.title ?? thread.titleFallback;
+            links.push({
+              kind: "pr",
+              repo,
+              number: pull.number,
+              threadId: thread.id,
+              ...(title ? { title } : {}),
+              createdAt: new Date(thread.createdAt).toISOString(),
+            });
+          }
+        }
+      } catch (error) {
+        bb.log.warn(`Thread PR lookup unavailable: ${errorMessage(error)}`);
+      }
+    }
+    return result;
+  }
+  function discoverThreadLinks(): Promise<DiscoveredLinks> {
+    if (linkCache && Date.now() - linkCache.at < 15_000)
+      return Promise.resolve(linkCache.links);
+    if (linkLookup) return linkLookup;
+    const generation = linkGeneration;
+    linkLookup = scanThreadLinks()
+      .catch((error: unknown) => {
+        bb.log.warn(
+          `Thread link discovery unavailable: ${errorMessage(error)}`,
+        );
+        return {};
+      })
+      .then((links) => {
+        if (generation === linkGeneration)
+          linkCache = { at: Date.now(), links };
+        return links;
+      })
+      .finally(() => {
+        linkLookup = null;
+      });
+    return linkLookup;
+  }
+  async function listThreadLinks(): Promise<DiscoveredLinks> {
+    const [stored, discovered] = await Promise.all([
+      listAllLinks(),
+      discoverThreadLinks(),
+    ]);
+    const nativeByThread = new Map<string, string>();
+    for (const [key, links] of Object.entries(discovered))
+      for (const link of links) nativeByThread.set(link.threadId, key);
+    const result: DiscoveredLinks = {};
+    for (const [key, links] of Object.entries(discovered))
+      result[key] = [...links];
+    for (const [key, links] of Object.entries(stored)) {
+      for (const link of links) {
+        // The live branch association wins over an outdated explicit PR link.
+        const native =
+          link.kind === "pr" ? nativeByThread.get(link.threadId) : undefined;
+        if (native !== undefined && native !== key) continue;
+        const group = (result[key] ??= []);
+        if (!group.some((entry) => entry.threadId === link.threadId))
+          group.push(link);
+      }
+    }
+    return result;
+  }
+
   async function resolveProjectId(repo: string): Promise<string> {
     const repos = await discoverRepos();
     const info = repos.find((entry) => entry.repo === repo);
@@ -1607,15 +1760,12 @@ export default async function plugin(bb: BbPluginApi) {
           const result = rows[thread.environmentId];
           const url =
             result?.outcome === "available" ? result.pullRequest.url : null;
-          const match =
-            typeof url === "string"
-              ? url.match(/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/)
-              : null;
-          if (match !== null) {
+          const pull = parsePullUrl(url);
+          if (pull !== null) {
             return {
               pull: {
-                repo: match[1],
-                number: Number(match[2]),
+                repo: pull.repo,
+                number: pull.number,
                 environmentId,
               },
             };
@@ -1682,7 +1832,7 @@ export default async function plugin(bb: BbPluginApi) {
     },
 
     async listLinks() {
-      return { links: await listAllLinks() };
+      return { links: await listThreadLinks() };
     },
   });
 
