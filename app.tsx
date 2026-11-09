@@ -2129,49 +2129,6 @@ function GithubPanel({ subPath }: PluginNavPanelProps) {
   );
 }
 
-function ListView({
-  kind,
-  query,
-  setQuery,
-  repos,
-  onOpenItem,
-}: {
-  kind: "issue" | "pr";
-  query: string;
-  setQuery: (query: string) => void;
-  repos: RepoInfo[];
-  onOpenItem: (repo: string, number: number) => void;
-}) {
-  const { items, error } = useItems(kind);
-  const viewer = useViewer();
-  const parsed = useMemo(() => parseQuery(query), [query]);
-  const filtered = useMemo(
-    () =>
-      items === null
-        ? null
-        : items.filter((item) => matchesQuery(item, parsed, viewer)),
-    [items, parsed, viewer],
-  );
-  return (
-    <>
-      <FilterBar
-        value={query}
-        onChange={setQuery}
-        items={items}
-        repos={repos}
-        kind={kind}
-      />
-      <ItemsTable
-        kind={kind}
-        items={filtered}
-        error={error}
-        hasFilter={query.trim().length > 0}
-        onOpenItem={onOpenItem}
-      />
-    </>
-  );
-}
-
 function GithubPanelBody({
   route,
   navigate,
@@ -2323,13 +2280,23 @@ function SearchSection({
   onOpenItem: (repo: string, number: number) => void;
   onNewIssue: () => void;
 }) {
+  const { items, error } = useItems(search.kind);
+  const viewer = useViewer();
+  const parsed = useMemo(() => parseQuery(search.query), [search.query]);
+  const filtered = useMemo(
+    () =>
+      items === null
+        ? null
+        : items.filter((item) => matchesQuery(item, parsed, viewer)),
+    [items, parsed, viewer],
+  );
   const name = search.name.trim() || "Untitled search";
   return (
     <section
       aria-label={name}
-      className="rounded-lg border border-border bg-card p-3 space-y-3"
+      className="@container/search-section rounded-lg border border-border bg-card p-3 space-y-3"
     >
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         <Button
           variant="ghost"
           size="icon"
@@ -2356,9 +2323,18 @@ function SearchSection({
           aria-label="Search name"
           value={search.name}
           placeholder="Search name"
-          className="h-8 min-w-0 flex-1 border-transparent font-medium shadow-none hover:border-input"
+          className="h-8 min-w-0 flex-1 border-transparent font-medium shadow-none hover:border-input @min-[48rem]/search-section:w-40 @min-[48rem]/search-section:flex-none"
           onChange={(event) => onChange({ name: event.target.value })}
         />
+        <div className="order-last min-w-0 basis-full @min-[48rem]/search-section:order-none @min-[48rem]/search-section:flex-1 @min-[48rem]/search-section:basis-64">
+          <FilterBar
+            value={search.query}
+            onChange={(query) => onChange({ query })}
+            items={items}
+            repos={repos}
+            kind={search.kind}
+          />
+        </div>
         <Button
           variant="ghost"
           size="icon"
@@ -2389,12 +2365,6 @@ function SearchSection({
           <Icon name="Trash2" />
         </Button>
       </div>
-      {search.collapsed ? (
-        <p className="truncate px-2 text-xs text-muted-foreground">
-          {search.kind === "pr" ? "Pull requests" : "Issues"} ·{" "}
-          {search.query.trim() || "All items"}
-        </p>
-      ) : null}
       <div
         id={`search-${search.id}`}
         hidden={search.collapsed}
@@ -2407,11 +2377,11 @@ function SearchSection({
             </Button>
           </div>
         ) : null}
-        <ListView
+        <ItemsTable
           kind={search.kind}
-          query={search.query}
-          setQuery={(query) => onChange({ query })}
-          repos={repos}
+          items={filtered}
+          error={error}
+          hasFilter={search.query.trim().length > 0}
           onOpenItem={onOpenItem}
         />
       </div>

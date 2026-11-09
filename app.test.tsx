@@ -135,7 +135,10 @@ describe("GitHub tab persistence", () => {
       slot.getByRole("button", { name: "Collapse Open issues" }).click(),
     );
     expect(
-      within(second).queryByRole("textbox", { name: "Search filter" }),
+      within(second).getByRole("textbox", { name: "Search filter" }),
+    ).toBeTruthy();
+    expect(
+      within(second).queryByRole("button", { name: "New issue" }),
     ).toBeNull();
     slot.lifecycle.unmount();
 
