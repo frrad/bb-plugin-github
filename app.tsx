@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -978,7 +979,7 @@ function ItemRow({
           {showSlackColumn ? (
             <span
               role="cell"
-              className="flex items-center justify-center @[48rem]:order-none"
+              className="flex items-center justify-center @[48rem]:order-2"
             >
               {slackUrl ? (
                 <a
@@ -1267,15 +1268,15 @@ function ItemsTable({
   const widths = { ...defaultWidths(kind), ...preferences?.widths, ...preview };
   for (const column of TABLE_COLUMNS)
     widths[column] = clampWidth(column, widths[column], kind);
-  const columns =
-    (showSlackColumn ? "48px " : "") +
-    TABLE_COLUMNS.map((column) =>
+  const columns = TABLE_COLUMNS.map((column) => {
+    const width =
       column === "title" &&
       preferences?.widths?.title === undefined &&
       preview.title === undefined
         ? "minmax(120px, 1fr)"
-        : `${widths[column]}px`,
-    ).join(" ");
+        : `${widths[column]}px`;
+    return column === "repo" && showSlackColumn ? `48px ${width}` : width;
+  }).join(" ");
   const minimum = TABLE_COLUMNS.reduce(
     (total, column) =>
       total +
@@ -1350,127 +1351,128 @@ function ItemsTable({
             role="row"
             className="hidden grid-cols-[var(--table-columns)] items-center gap-3 border-b border-border bg-muted/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:grid"
           >
-            {showSlackColumn ? (
-              <div role="columnheader" className="text-center">
-                Slack
-              </div>
-            ) : null}
             {TABLE_COLUMNS.map((column) => (
-              <div
-                key={column}
-                role="columnheader"
-                aria-sort={
-                  column === preferences?.sort?.column
-                    ? preferences.sort.direction === "asc"
-                      ? "ascending"
-                      : "descending"
-                    : "none"
-                }
-                className="relative min-w-0"
-              >
-                {column === "actions" ? (
-                  <span className="sr-only">Actions</span>
-                ) : (
-                  <button
-                    className="flex w-full min-w-0 items-center gap-1 truncate rounded py-1 text-left uppercase hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    onClick={() => {
-                      const current = preferences?.sort;
-                      const sort =
-                        current?.column !== column
-                          ? { column, direction: "asc" as const }
-                          : current.direction === "asc"
-                            ? { column, direction: "desc" as const }
-                            : undefined;
-                      onPreferencesChange({ ...preferences, sort });
-                    }}
-                  >
-                    {COLUMN_LABELS[column]}
-                    {preferences?.sort?.column === column ? (
-                      <span aria-hidden="true">
-                        {preferences.sort.direction === "asc" ? "↑" : "↓"}
-                      </span>
-                    ) : null}
-                  </button>
-                )}
+              <Fragment key={column}>
+                {column === "repo" && showSlackColumn ? (
+                  <div role="columnheader" className="text-center">
+                    Slack
+                  </div>
+                ) : null}
                 <div
-                  role="separator"
-                  tabIndex={0}
-                  aria-label={`Resize ${COLUMN_LABELS[column]} column`}
-                  aria-orientation="vertical"
-                  title="Drag to resize; double-click to reset. Arrow keys also resize."
-                  aria-valuemin={clampWidth(column, 0, kind)}
-                  aria-valuemax={1200}
-                  aria-valuenow={widths[column]}
-                  className="absolute -right-2 top-0 h-full w-2 cursor-col-resize touch-none select-none border-r border-border hover:border-foreground focus-visible:border-foreground focus-visible:outline-none"
-                  onPointerDown={(event) => {
-                    if (event.button !== 0) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const width =
-                      event.currentTarget.parentElement?.getBoundingClientRect()
-                        .width || widths[column];
-                    drag.current = {
-                      column,
-                      startX: event.clientX,
-                      startWidth: width,
-                      width,
-                    };
-                    event.currentTarget.setPointerCapture?.(event.pointerId);
-                  }}
-                  onPointerMove={(event) => {
-                    const active = drag.current;
-                    if (!active || active.column !== column) return;
-                    active.width = clampWidth(
-                      column,
-                      active.startWidth + event.clientX - active.startX,
-                      kind,
-                    );
-                    setPreview({ [column]: active.width });
-                  }}
-                  onPointerUp={(event) => {
-                    const active = drag.current;
-                    if (!active || active.column !== column) return;
-                    drag.current = null;
-                    saveWidth(column, active.width);
-                    setPreview({});
-                    if (
-                      event.currentTarget.hasPointerCapture?.(event.pointerId)
-                    )
-                      event.currentTarget.releasePointerCapture(
-                        event.pointerId,
+                  role="columnheader"
+                  aria-sort={
+                    column === preferences?.sort?.column
+                      ? preferences.sort.direction === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
+                  className="relative min-w-0"
+                >
+                  {column === "actions" ? (
+                    <span className="sr-only">Actions</span>
+                  ) : (
+                    <button
+                      className="flex w-full min-w-0 items-center gap-1 truncate rounded py-1 text-left uppercase hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      onClick={() => {
+                        const current = preferences?.sort;
+                        const sort =
+                          current?.column !== column
+                            ? { column, direction: "asc" as const }
+                            : current.direction === "asc"
+                              ? { column, direction: "desc" as const }
+                              : undefined;
+                        onPreferencesChange({ ...preferences, sort });
+                      }}
+                    >
+                      {COLUMN_LABELS[column]}
+                      {preferences?.sort?.column === column ? (
+                        <span aria-hidden="true">
+                          {preferences.sort.direction === "asc" ? "↑" : "↓"}
+                        </span>
+                      ) : null}
+                    </button>
+                  )}
+                  <div
+                    role="separator"
+                    tabIndex={0}
+                    aria-label={`Resize ${COLUMN_LABELS[column]} column`}
+                    aria-orientation="vertical"
+                    title="Drag to resize; double-click to reset. Arrow keys also resize."
+                    aria-valuemin={clampWidth(column, 0, kind)}
+                    aria-valuemax={1200}
+                    aria-valuenow={widths[column]}
+                    className="absolute -right-2 top-0 h-full w-2 cursor-col-resize touch-none select-none border-r border-border hover:border-foreground focus-visible:border-foreground focus-visible:outline-none"
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const width =
+                        event.currentTarget.parentElement?.getBoundingClientRect()
+                          .width || widths[column];
+                      drag.current = {
+                        column,
+                        startX: event.clientX,
+                        startWidth: width,
+                        width,
+                      };
+                      event.currentTarget.setPointerCapture?.(event.pointerId);
+                    }}
+                    onPointerMove={(event) => {
+                      const active = drag.current;
+                      if (!active || active.column !== column) return;
+                      active.width = clampWidth(
+                        column,
+                        active.startWidth + event.clientX - active.startX,
+                        kind,
                       );
-                  }}
-                  onPointerCancel={() => {
-                    drag.current = null;
-                    setPreview({});
-                  }}
-                  onLostPointerCapture={() => {
-                    drag.current = null;
-                    setPreview({});
-                  }}
-                  onDoubleClick={() => {
-                    const next = { ...preferences?.widths };
-                    delete next[column];
-                    onPreferencesChange({ ...preferences, widths: next });
-                  }}
-                  onKeyDown={(event) => {
-                    if (
-                      event.key !== "ArrowLeft" &&
-                      event.key !== "ArrowRight" &&
-                      event.key !== "Home"
-                    )
-                      return;
-                    event.preventDefault();
-                    saveWidth(
-                      column,
-                      event.key === "Home"
-                        ? defaultWidths(kind)[column]
-                        : widths[column] +
-                            (event.key === "ArrowRight" ? 16 : -16),
-                    );
-                  }}
-                />
-              </div>
+                      setPreview({ [column]: active.width });
+                    }}
+                    onPointerUp={(event) => {
+                      const active = drag.current;
+                      if (!active || active.column !== column) return;
+                      drag.current = null;
+                      saveWidth(column, active.width);
+                      setPreview({});
+                      if (
+                        event.currentTarget.hasPointerCapture?.(event.pointerId)
+                      )
+                        event.currentTarget.releasePointerCapture(
+                          event.pointerId,
+                        );
+                    }}
+                    onPointerCancel={() => {
+                      drag.current = null;
+                      setPreview({});
+                    }}
+                    onLostPointerCapture={() => {
+                      drag.current = null;
+                      setPreview({});
+                    }}
+                    onDoubleClick={() => {
+                      const next = { ...preferences?.widths };
+                      delete next[column];
+                      onPreferencesChange({ ...preferences, widths: next });
+                    }}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key !== "ArrowLeft" &&
+                        event.key !== "ArrowRight" &&
+                        event.key !== "Home"
+                      )
+                        return;
+                      event.preventDefault();
+                      saveWidth(
+                        column,
+                        event.key === "Home"
+                          ? defaultWidths(kind)[column]
+                          : widths[column] +
+                              (event.key === "ArrowRight" ? 16 : -16),
+                      );
+                    }}
+                  />
+                </div>
+              </Fragment>
             ))}
           </div>
           {error !== null && items !== null ? (
