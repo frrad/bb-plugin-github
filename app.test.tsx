@@ -301,12 +301,12 @@ describe("Slack reference field", () => {
     const unlinkedRow = reopened
       .getByText("A PR without a discussion")
       .closest('[role="row"]')!;
-    expect(linkedRow.querySelectorAll('[role="cell"]').length).toBe(8);
-    expect(unlinkedRow.querySelectorAll('[role="cell"]').length).toBe(8);
+    expect(linkedRow.querySelectorAll('[role="cell"]').length).toBe(9);
+    expect(unlinkedRow.querySelectorAll('[role="cell"]').length).toBe(9);
     expect(slackBadge.closest('[role="cell"]')).toBe(
-      linkedRow.querySelectorAll('[role="cell"]')[1],
+      linkedRow.querySelectorAll('[role="cell"]')[2],
     );
-    expect(unlinkedRow.querySelectorAll('[role="cell"]')[1]!.textContent).toBe(
+    expect(unlinkedRow.querySelectorAll('[role="cell"]')[2]!.textContent).toBe(
       "",
     );
     await act(async () => fireEvent.click(slackBadge));
@@ -941,15 +941,18 @@ describe("GitHub app navigation", () => {
         .some((cell) => cell.getAttribute("title") === "get-bb/bb"),
     ).toBe(true);
     expect(await slot.findByText("draft")).toBeTruthy();
-    const github = await slot.findByRole("link", { name: "GitHub" });
+    const github = await slot.findByRole("link", {
+      name: "Open GitHub page for get-bb/bb#42",
+    });
     expect(github.getAttribute("href")).toBe(url);
     expect(github.getAttribute("target")).toBe("_blank");
     expect(github.getAttribute("rel")).toBe("noopener noreferrer");
     const actions = slot.getByRole("button", { name: "Review" }).parentElement!;
     expect(actions.textContent).not.toContain("⋮");
-    expect(actions.children[1]).toBe(github);
+    expect(actions.contains(github)).toBe(false);
+    expect(github.closest('[role="cell"]')).toBeTruthy();
     const copy = slot.getByRole("button", { name: "Copy GitHub link" });
-    expect(actions.children[2]).toBe(copy);
+    expect(actions.children[1]).toBe(copy);
     await act(async () => copy.click());
     expect(slot.inspection.experimental_clipboardWrites).toEqual([
       { text: url },

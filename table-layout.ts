@@ -34,7 +34,7 @@ export function defaultWidths(
     assignee: 80,
     status: 96,
     updated: 72,
-    actions: kind === "pr" ? 192 : 96,
+    actions: kind === "pr" ? 112 : 96,
   };
 }
 export function clampWidth(

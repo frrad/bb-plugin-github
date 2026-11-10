@@ -70,6 +70,7 @@ import {
 import { panelCache, isSyncStale } from "./panel-cache.js";
 import { itemNoteKey, itemNotes, type NotesTransport } from "./item-notes.js";
 import { normalizeSlackLink } from "./slack-link.js";
+import { GitHubLogo } from "./components/github-logo.js";
 import { SlackLogo } from "./components/slack-logo.js";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
@@ -976,6 +977,22 @@ function ItemRow({
           role="presentation"
           className="flex min-w-0 items-center gap-2 @[48rem]:contents"
         >
+          <span
+            role="cell"
+            className="flex items-center justify-center @[48rem]:order-2"
+          >
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Open GitHub page for ${item.repo}#${item.number}`}
+              title="Open on GitHub in your browser"
+              className="inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-background text-foreground shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <GitHubLogo className="size-3.5" />
+            </a>
+          </span>
           {showSlackColumn ? (
             <span
               role="cell"
@@ -1043,17 +1060,6 @@ function ItemRow({
             </Button>
             {item.kind === "pr" ? (
               <>
-                <Button size="sm" variant="outline" className="h-7" asChild>
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Open on GitHub in your browser"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    GitHub
-                  </a>
-                </Button>
                 <Button
                   size="icon"
                   variant="outline"
@@ -1085,7 +1091,7 @@ function ItemRow({
         >
           <div
             role="cell"
-            aria-colspan={TABLE_COLUMNS.length + (showSlackColumn ? 1 : 0)}
+            aria-colspan={TABLE_COLUMNS.length + 1 + (showSlackColumn ? 1 : 0)}
             className="space-y-2"
           >
             <label
@@ -1189,6 +1195,9 @@ function TableSkeleton() {
               <span className={`${COL.id} @[48rem]:order-1`}>
                 <Skeleton className="h-3 w-10" />
               </span>
+              <span className="flex justify-center @[48rem]:order-2">
+                <Skeleton className="size-6 rounded-md" />
+              </span>
               <span className={`${COL.repo} @[48rem]:order-3`}>
                 <Skeleton className="h-3 w-24" />
               </span>
@@ -1275,7 +1284,9 @@ function ItemsTable({
       preview.title === undefined
         ? "minmax(120px, 1fr)"
         : `${widths[column]}px`;
-    return column === "repo" && showSlackColumn ? `48px ${width}` : width;
+    return column === "repo"
+      ? `56px ${showSlackColumn ? "48px " : ""}${width}`
+      : width;
   }).join(" ");
   const minimum = TABLE_COLUMNS.reduce(
     (total, column) =>
@@ -1285,7 +1296,7 @@ function ItemsTable({
       preview.title === undefined
         ? 120
         : widths[column]),
-    24 + 6 * 12 + (showSlackColumn ? 60 : 0),
+    24 + 6 * 12 + 68 + (showSlackColumn ? 60 : 0),
   );
   const sorted = useMemo(
     () => (items === null ? null : sortItems(items, preferences?.sort)),
@@ -1353,6 +1364,11 @@ function ItemsTable({
           >
             {TABLE_COLUMNS.map((column) => (
               <Fragment key={column}>
+                {column === "repo" ? (
+                  <div role="columnheader" className="text-center">
+                    GitHub
+                  </div>
+                ) : null}
                 {column === "repo" && showSlackColumn ? (
                   <div role="columnheader" className="text-center">
                     Slack

@@ -59,7 +59,7 @@ describe("table preferences", () => {
   it("bounds resizing while keeping action controls wide enough", () => {
     expect(clampWidth("repo", -100, "pr")).toBe(64);
     expect(clampWidth("title", 5000, "pr")).toBe(1200);
-    expect(clampWidth("actions", 20, "pr")).toBe(192);
+    expect(clampWidth("actions", 20, "pr")).toBe(112);
     expect(clampWidth("actions", 20, "issue")).toBe(96);
   });
   it("restores valid settings and ignores invalid optional preferences without losing a search", () => {
