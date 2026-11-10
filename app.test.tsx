@@ -304,9 +304,9 @@ describe("Slack reference field", () => {
     expect(linkedRow.querySelectorAll('[role="cell"]').length).toBe(8);
     expect(unlinkedRow.querySelectorAll('[role="cell"]').length).toBe(8);
     expect(slackBadge.closest('[role="cell"]')).toBe(
-      linkedRow.querySelectorAll('[role="cell"]')[7],
+      linkedRow.querySelectorAll('[role="cell"]')[1],
     );
-    expect(unlinkedRow.querySelectorAll('[role="cell"]')[7]!.textContent).toBe(
+    expect(unlinkedRow.querySelectorAll('[role="cell"]')[1]!.textContent).toBe(
       "",
     );
     await act(async () => fireEvent.click(slackBadge));

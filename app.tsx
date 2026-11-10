@@ -975,6 +975,26 @@ function ItemRow({
           role="presentation"
           className="flex min-w-0 items-center gap-2 @[48rem]:contents"
         >
+          {showSlackColumn ? (
+            <span
+              role="cell"
+              className="flex items-center justify-center @[48rem]:order-none"
+            >
+              {slackUrl ? (
+                <a
+                  href={slackUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open Slack thread for ${item.repo}#${item.number}`}
+                  title="Open Slack thread"
+                  className="inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-white shadow-sm hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <SlackLogo className="size-3.5" />
+                </a>
+              ) : null}
+            </span>
+          ) : null}
           <span
             role="cell"
             className={`${COL.id} font-mono text-xs text-muted-foreground @[48rem]:order-1`}
@@ -1055,26 +1075,6 @@ function ItemRow({
               <RowMenu item={item} />
             )}
           </span>
-          {showSlackColumn ? (
-            <span
-              role="cell"
-              className="flex items-center justify-center @[48rem]:order-8"
-            >
-              {slackUrl ? (
-                <a
-                  href={slackUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Open Slack thread for ${item.repo}#${item.number}`}
-                  title="Open Slack thread"
-                  className="inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-white shadow-sm hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <SlackLogo className="size-3.5" />
-                </a>
-              ) : null}
-            </span>
-          ) : null}
         </span>
       </div>
       {notesOpen ? (
@@ -1268,13 +1268,14 @@ function ItemsTable({
   for (const column of TABLE_COLUMNS)
     widths[column] = clampWidth(column, widths[column], kind);
   const columns =
+    (showSlackColumn ? "48px " : "") +
     TABLE_COLUMNS.map((column) =>
       column === "title" &&
       preferences?.widths?.title === undefined &&
       preview.title === undefined
         ? "minmax(120px, 1fr)"
         : `${widths[column]}px`,
-    ).join(" ") + (showSlackColumn ? " 48px" : "");
+    ).join(" ");
   const minimum = TABLE_COLUMNS.reduce(
     (total, column) =>
       total +
@@ -1349,6 +1350,11 @@ function ItemsTable({
             role="row"
             className="hidden grid-cols-[var(--table-columns)] items-center gap-3 border-b border-border bg-muted/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:grid"
           >
+            {showSlackColumn ? (
+              <div role="columnheader" className="text-center">
+                Slack
+              </div>
+            ) : null}
             {TABLE_COLUMNS.map((column) => (
               <div
                 key={column}
@@ -1466,11 +1472,6 @@ function ItemsTable({
                 />
               </div>
             ))}
-            {showSlackColumn ? (
-              <div role="columnheader" className="text-center">
-                Slack
-              </div>
-            ) : null}
           </div>
           {error !== null && items !== null ? (
             <p
