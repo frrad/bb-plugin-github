@@ -75,6 +75,8 @@ describe("native PR thread link discovery", () => {
         thread("b", "shared"),
         thread("c", "other"),
         thread("no-environment", null),
+        thread("review", null),
+        thread("issue-worker", null),
         { ...thread("archived", "archived-env"), archivedAt: 1 },
         { ...thread("hidden", "hidden-env"), visibility: "hidden" },
         { ...thread("deleted", "deleted-env"), deletedAt: 1 },
@@ -104,6 +106,25 @@ describe("native PR thread link discovery", () => {
     });
     await harness.behavior.callRpc("listLinks");
     expect(lookup).toHaveBeenCalledTimes(1);
+  });
+  it("hides archived explicit PR and issue links and restores them after unarchiving", async () => {
+    const worker = thread("worker", "env");
+    const { bb, harness } = await start([worker], { env: available(42) });
+    await bb.storage.kv.set("link:pr:acme/widgets#42", [stored("worker")]);
+    await bb.storage.kv.set("link:issue:acme/widgets#7", [
+      stored("worker", "issue", 7),
+    ]);
+    const before = await harness.behavior.callRpc("listLinks");
+    worker.archivedAt = 1;
+    await harness.behavior.emitThreadEvent("thread.archived", {
+      thread: worker,
+    });
+    expect(await harness.behavior.callRpc("listLinks")).toEqual({ links: {} });
+    worker.archivedAt = null;
+    await harness.behavior.emitThreadEvent("thread.unarchived", {
+      thread: worker,
+    });
+    expect(await harness.behavior.callRpc("listLinks")).toEqual(before);
   });
   it("follows changed native associations instead of keeping outdated explicit PR links", async () => {
     const rows = { env: available(42) };
@@ -146,14 +167,17 @@ describe("native PR thread link discovery", () => {
     ).toEqual([200, 5]);
   });
   it("keeps explicit links if native PR lookup is unavailable and ignores unrelated URLs", async () => {
-    const { bb, harness, lookup } = await start([thread("one", "env")], {
-      env: {
-        outcome: "available",
-        pullRequest: {
-          url: "https://other.example/github.com/acme/widgets/pull/42",
+    const { bb, harness, lookup } = await start(
+      [thread("one", "env"), thread("review", null)],
+      {
+        env: {
+          outcome: "available",
+          pullRequest: {
+            url: "https://other.example/github.com/acme/widgets/pull/42",
+          },
         },
       },
-    });
+    );
     await bb.storage.kv.set("link:pr:acme/widgets#42", [stored("review")]);
     const expected = { links: { "pr:acme/widgets#42": [stored("review")] } };
     expect(await harness.behavior.callRpc("listLinks")).toEqual(expected);

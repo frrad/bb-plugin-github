@@ -1103,8 +1103,12 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   type DiscoveredLinks = Record<string, ThreadLink[]>;
-  let linkCache: { at: number; links: DiscoveredLinks } | null = null;
-  let linkLookup: Promise<DiscoveredLinks> | null = null;
+  type ThreadLinkScan = {
+    links: DiscoveredLinks;
+    visibleThreadIds: Set<string> | null;
+  };
+  let linkCache: { at: number; scan: ThreadLinkScan } | null = null;
+  let linkLookup: Promise<ThreadLinkScan> | null = null;
   let linkGeneration = 0;
   function invalidateThreadLinks() {
     linkGeneration++;
@@ -1120,7 +1124,7 @@ export default async function plugin(bb: BbPluginApi) {
   ] as const) {
     bb.events.on(event, invalidateThreadLinks);
   }
-  async function scanThreadLinks(): Promise<DiscoveredLinks> {
+  async function scanThreadLinks(): Promise<ThreadLinkScan> {
     const threads: Awaited<ReturnType<typeof bb.sdk.threads.list>> = [];
     for (let offset = 0; ; ) {
       const page = await bb.sdk.threads.list({
@@ -1133,15 +1137,17 @@ export default async function plugin(bb: BbPluginApi) {
       offset += page.length;
       if (page.length < 200) break;
     }
+    const visibleThreadIds = new Set<string>();
     const byEnvironment = new Map<string, typeof threads>();
     for (const thread of threads) {
       if (
-        !thread.environmentId ||
         thread.archivedAt !== null ||
         thread.deletedAt !== null ||
         thread.visibility === "hidden"
       )
         continue;
+      visibleThreadIds.add(thread.id);
+      if (!thread.environmentId) continue;
       const group = byEnvironment.get(thread.environmentId) ?? [];
       group.push(thread);
       byEnvironment.set(thread.environmentId, group);
@@ -1189,11 +1195,11 @@ export default async function plugin(bb: BbPluginApi) {
         bb.log.warn(`Thread PR lookup unavailable: ${errorMessage(error)}`);
       }
     }
-    return result;
+    return { links: result, visibleThreadIds };
   }
-  function discoverThreadLinks(): Promise<DiscoveredLinks> {
+  function discoverThreadLinks(): Promise<ThreadLinkScan> {
     if (linkCache && Date.now() - linkCache.at < 15_000)
-      return Promise.resolve(linkCache.links);
+      return Promise.resolve(linkCache.scan);
     if (linkLookup) return linkLookup;
     const generation = linkGeneration;
     linkLookup = scanThreadLinks()
@@ -1201,12 +1207,11 @@ export default async function plugin(bb: BbPluginApi) {
         bb.log.warn(
           `Thread link discovery unavailable: ${errorMessage(error)}`,
         );
-        return {};
+        return { links: {}, visibleThreadIds: null };
       })
-      .then((links) => {
-        if (generation === linkGeneration)
-          linkCache = { at: Date.now(), links };
-        return links;
+      .then((scan) => {
+        if (generation === linkGeneration) linkCache = { at: Date.now(), scan };
+        return scan;
       })
       .finally(() => {
         linkLookup = null;
@@ -1214,10 +1219,11 @@ export default async function plugin(bb: BbPluginApi) {
     return linkLookup;
   }
   async function listThreadLinks(): Promise<DiscoveredLinks> {
-    const [stored, discovered] = await Promise.all([
+    const [stored, scan] = await Promise.all([
       listAllLinks(),
       discoverThreadLinks(),
     ]);
+    const discovered = scan.links;
     const nativeByThread = new Map<string, string>();
     for (const [key, links] of Object.entries(discovered))
       for (const link of links) nativeByThread.set(link.threadId, key);
@@ -1226,6 +1232,9 @@ export default async function plugin(bb: BbPluginApi) {
       result[key] = [...links];
     for (const [key, links] of Object.entries(stored)) {
       for (const link of links) {
+        // Explicit links must obey the same visibility rules as discovered links.
+        if (scan.visibleThreadIds && !scan.visibleThreadIds.has(link.threadId))
+          continue;
         // The live branch association wins over an outdated explicit PR link.
         const native =
           link.kind === "pr" ? nativeByThread.get(link.threadId) : undefined;
