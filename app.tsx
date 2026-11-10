@@ -970,7 +970,34 @@ function ItemRow({
               labels={item.labels}
               className="hidden shrink-0 @[60rem]:flex"
             />
-            <ThreadPills links={links} />
+            <span className="flex shrink-0 items-center gap-1">
+              {item.kind === "pr" ? (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-6"
+                  aria-label="Start review"
+                  disabled={spawningKey !== null}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    spawn("startReview", item.repo, item.number);
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className={`size-3.5 ${busy ? "animate-pulse" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                </Button>
+              ) : null}
+              <ThreadPills links={links} />
+            </span>
           </span>
         </span>
         <span
@@ -979,7 +1006,7 @@ function ItemRow({
         >
           <span
             role="cell"
-            className="flex items-center justify-center @[48rem]:order-2"
+            className="flex items-center justify-center gap-1 @[48rem]:order-2"
           >
             <a
               href={item.url}
@@ -992,6 +1019,25 @@ function ItemRow({
             >
               <GitHubLogo className="size-3.5" />
             </a>
+            {item.kind === "pr" ? (
+              <Button
+                size="icon"
+                variant="outline"
+                className="size-7"
+                aria-label="Copy GitHub link"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void experimental_copyToClipboard({ text: item.url }).then(
+                    (copied) => {
+                      if (copied) toast.success("Link copied");
+                      else toast.error("Could not copy the link");
+                    },
+                  );
+                }}
+              >
+                <Icon name="Link" className="size-3.5" />
+              </Button>
+            ) : null}
           </span>
           {showSlackColumn ? (
             <span
@@ -1041,47 +1087,27 @@ function ItemRow({
           >
             {relativeTime(item.updatedAt)}
           </span>
-          <span role="cell" className={`${COL.actions} @[48rem]:order-7`}>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7"
-              disabled={spawningKey !== null}
-              onClick={(event) => {
-                event.stopPropagation();
-                spawn(
-                  item.kind === "issue" ? "startWork" : "startReview",
-                  item.repo,
-                  item.number,
-                );
-              }}
-            >
-              {busy ? "…" : item.kind === "issue" ? "Start" : "Review"}
-            </Button>
-            {item.kind === "pr" ? (
-              <>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="size-7"
-                  aria-label="Copy GitHub link"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void experimental_copyToClipboard({ text: item.url }).then(
-                      (copied) => {
-                        if (copied) toast.success("Link copied");
-                        else toast.error("Could not copy the link");
-                      },
-                    );
-                  }}
-                >
-                  <Icon name="Link" className="size-3.5" />
-                </Button>
-              </>
-            ) : (
+          {item.kind === "issue" ? (
+            <span role="cell" className={`${COL.actions} @[48rem]:order-7`}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                disabled={spawningKey !== null}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  spawn(
+                    item.kind === "issue" ? "startWork" : "startReview",
+                    item.repo,
+                    item.number,
+                  );
+                }}
+              >
+                {busy ? "…" : "Start"}
+              </Button>
               <RowMenu item={item} />
-            )}
-          </span>
+            </span>
+          ) : null}
         </span>
       </div>
       {notesOpen ? (
@@ -1091,7 +1117,11 @@ function ItemRow({
         >
           <div
             role="cell"
-            aria-colspan={TABLE_COLUMNS.length + 1 + (showSlackColumn ? 1 : 0)}
+            aria-colspan={
+              TABLE_COLUMNS.length +
+              (item.kind === "issue" ? 1 : 0) +
+              (showSlackColumn ? 1 : 0)
+            }
             className="space-y-2"
           >
             <label
@@ -1181,7 +1211,7 @@ function ItemRow({
   );
 }
 
-function TableSkeleton() {
+function TableSkeleton({ kind }: { kind: "issue" | "pr" }) {
   return (
     <DelayedLoading>
       <div className="divide-y divide-border">
@@ -1210,9 +1240,11 @@ function TableSkeleton() {
               <span className={`${COL.updated} @[48rem]:order-6`}>
                 <Skeleton className="ml-auto h-3 w-12" />
               </span>
-              <span className={`${COL.actions} @[48rem]:order-7`}>
-                <Skeleton className="h-7 w-20" />
-              </span>
+              {kind === "issue" ? (
+                <span className={`${COL.actions} @[48rem]:order-7`}>
+                  <Skeleton className="h-7 w-20" />
+                </span>
+              ) : null}
             </span>
           </div>
         ))}
@@ -1274,21 +1306,26 @@ function ItemsTable({
     startWidth: number;
     width: number;
   } | null>(null);
+  const visibleColumns = TABLE_COLUMNS.filter(
+    (column) => kind === "issue" || column !== "actions",
+  );
   const widths = { ...defaultWidths(kind), ...preferences?.widths, ...preview };
   for (const column of TABLE_COLUMNS)
     widths[column] = clampWidth(column, widths[column], kind);
-  const columns = TABLE_COLUMNS.map((column) => {
-    const width =
-      column === "title" &&
-      preferences?.widths?.title === undefined &&
-      preview.title === undefined
-        ? "minmax(120px, 1fr)"
-        : `${widths[column]}px`;
-    return column === "repo"
-      ? `56px ${showSlackColumn ? "48px " : ""}${width}`
-      : width;
-  }).join(" ");
-  const minimum = TABLE_COLUMNS.reduce(
+  const columns = visibleColumns
+    .map((column) => {
+      const width =
+        column === "title" &&
+        preferences?.widths?.title === undefined &&
+        preview.title === undefined
+          ? "minmax(120px, 1fr)"
+          : `${widths[column]}px`;
+      return column === "repo"
+        ? `56px ${showSlackColumn ? "48px " : ""}${width}`
+        : width;
+    })
+    .join(" ");
+  const minimum = visibleColumns.reduce(
     (total, column) =>
       total +
       (column === "title" &&
@@ -1296,7 +1333,7 @@ function ItemsTable({
       preview.title === undefined
         ? 120
         : widths[column]),
-    24 + 6 * 12 + 68 + (showSlackColumn ? 60 : 0),
+    24 + (visibleColumns.length - 1) * 12 + 68 + (showSlackColumn ? 60 : 0),
   );
   const sorted = useMemo(
     () => (items === null ? null : sortItems(items, preferences?.sort)),
@@ -1315,7 +1352,7 @@ function ItemsTable({
   if (error !== null && items === null) {
     body = <EmptyState message={error} />;
   } else if (items === null) {
-    body = <TableSkeleton />;
+    body = <TableSkeleton kind={kind} />;
   } else if (items.length === 0) {
     body = (
       <EmptyState
@@ -1362,7 +1399,7 @@ function ItemsTable({
             role="row"
             className="hidden grid-cols-[var(--table-columns)] items-center gap-3 border-b border-border bg-muted/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:grid"
           >
-            {TABLE_COLUMNS.map((column) => (
+            {visibleColumns.map((column) => (
               <Fragment key={column}>
                 {column === "repo" ? (
                   <div role="columnheader" className="text-center">

@@ -301,8 +301,8 @@ describe("Slack reference field", () => {
     const unlinkedRow = reopened
       .getByText("A PR without a discussion")
       .closest('[role="row"]')!;
-    expect(linkedRow.querySelectorAll('[role="cell"]').length).toBe(9);
-    expect(unlinkedRow.querySelectorAll('[role="cell"]').length).toBe(9);
+    expect(linkedRow.querySelectorAll('[role="cell"]').length).toBe(8);
+    expect(unlinkedRow.querySelectorAll('[role="cell"]').length).toBe(8);
     expect(slackBadge.closest('[role="cell"]')).toBe(
       linkedRow.querySelectorAll('[role="cell"]')[2],
     );
@@ -884,13 +884,14 @@ describe("GitHub tab persistence", () => {
 });
 
 describe("GitHub app navigation", () => {
-  it("shows external GitHub and copy-link actions beside PR review", async () => {
+  it("groups GitHub actions and puts the review plus before linked threads", async () => {
     const url = "https://github.com/get-bb/bb/pull/42";
     const slot = renderSlot(
       app.navPanels[0]!,
       { subPath: "pulls" },
       {
         rpc: {
+          startReview: () => ({ threadId: "new-review-thread" }),
           listItems: () => ({
             items: [
               {
@@ -947,12 +948,12 @@ describe("GitHub app navigation", () => {
     expect(github.getAttribute("href")).toBe(url);
     expect(github.getAttribute("target")).toBe("_blank");
     expect(github.getAttribute("rel")).toBe("noopener noreferrer");
-    const actions = slot.getByRole("button", { name: "Review" }).parentElement!;
-    expect(actions.textContent).not.toContain("⋮");
-    expect(actions.contains(github)).toBe(false);
-    expect(github.closest('[role="cell"]')).toBeTruthy();
+    const review = slot.getByRole("button", { name: "Start review" });
     const copy = slot.getByRole("button", { name: "Copy GitHub link" });
-    expect(actions.children[1]).toBe(copy);
+    expect(github.closest('[role="cell"]')).toBe(copy.closest('[role="cell"]'));
+    expect(github.nextElementSibling).toBe(copy);
+    expect(review.parentElement!.firstElementChild).toBe(review);
+    expect(review.parentElement!.contains(slot.getByText("⚡"))).toBe(true);
     await act(async () => copy.click());
     expect(slot.inspection.experimental_clipboardWrites).toEqual([
       { text: url },
@@ -964,6 +965,11 @@ describe("GitHub app navigation", () => {
     expect(slot.navigateCalls).toContainEqual({
       method: "toThread",
       threadId: "existing-thread",
+    });
+    await act(async () => review.click());
+    expect(slot.navigateCalls).toContainEqual({
+      method: "toThread",
+      threadId: "new-review-thread",
     });
     slot.lifecycle.unmount();
   });
