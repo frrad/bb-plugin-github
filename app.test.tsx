@@ -209,13 +209,28 @@ describe("Slack reference field", () => {
                   url: "https://github.com/acme/widgets/pull/42",
                   updatedAt: "2026-01-01T00:00:00Z",
                 },
+                {
+                  ...identity,
+                  number: 43,
+                  title: "A PR without a discussion",
+                  state: "OPEN",
+                  author: "octocat",
+                  labels: [],
+                  assignees: [],
+                  body: "",
+                  url: "https://github.com/acme/widgets/pull/43",
+                  updatedAt: "2026-01-01T00:00:00Z",
+                },
               ],
             }),
             listLinks: () => ({ links: {} }),
             viewer: () => ({ login: "octocat" }),
             listNotes: () => ({ notes: [] }),
             listSlackLinks: () => ({
-              links: saved ? [{ ...identity, url: saved }] : [],
+              links: [
+                { ...identity, number: 99, url },
+                ...(saved ? [{ ...identity, url: saved }] : []),
+              ],
             }),
             saveSlackLink: (raw: unknown) => {
               const input = raw as { url: string };
@@ -227,6 +242,7 @@ describe("Slack reference field", () => {
       );
     const slot = mount();
     await slot.findByText("A PR with a discussion");
+    expect(slot.queryByRole("columnheader", { name: "Slack" })).toBeNull();
     expect(
       slot.queryByRole("link", {
         name: "Open Slack thread for acme/widgets#42",
@@ -280,6 +296,19 @@ describe("Slack reference field", () => {
     });
     expect(slackBadge.getAttribute("href")).toBe(url);
     expect(slackBadge.getAttribute("target")).toBe("_blank");
+    expect(reopened.getByRole("columnheader", { name: "Slack" })).toBeTruthy();
+    const linkedRow = slackBadge.closest('[role="row"]')!;
+    const unlinkedRow = reopened
+      .getByText("A PR without a discussion")
+      .closest('[role="row"]')!;
+    expect(linkedRow.querySelectorAll('[role="cell"]').length).toBe(8);
+    expect(unlinkedRow.querySelectorAll('[role="cell"]').length).toBe(8);
+    expect(slackBadge.closest('[role="cell"]')).toBe(
+      linkedRow.querySelectorAll('[role="cell"]')[7],
+    );
+    expect(unlinkedRow.querySelectorAll('[role="cell"]')[7]!.textContent).toBe(
+      "",
+    );
     await act(async () => fireEvent.click(slackBadge));
     expect(
       reopened.queryByRole("textbox", {
@@ -296,6 +325,7 @@ describe("Slack reference field", () => {
       reopened.getByRole("button", { name: "Remove link" }).click(),
     );
     expect(saved).toBeNull();
+    expect(reopened.queryByRole("columnheader", { name: "Slack" })).toBeNull();
     expect(reopened.queryByRole("link", { name: "Open in Slack" })).toBeNull();
     expect(
       reopened.queryByRole("link", {

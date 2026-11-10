@@ -899,11 +899,13 @@ function ItemRow({
   item,
   links,
   slackUrl,
+  showSlackColumn,
   onOpen,
 }: {
   item: Item;
   links: ThreadLink[] | undefined;
   slackUrl?: string;
+  showSlackColumn: boolean;
   onOpen: () => void;
 }) {
   const { spawn, spawningKey } = useSpawn();
@@ -967,19 +969,6 @@ function ItemRow({
               className="hidden shrink-0 @[60rem]:flex"
             />
             <ThreadPills links={links} />
-            {slackUrl ? (
-              <a
-                href={slackUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Open Slack thread for ${item.repo}#${item.number}`}
-                title="Open Slack thread"
-                className="inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-white shadow-sm hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <SlackLogo className="size-3.5" />
-              </a>
-            ) : null}
           </span>
         </span>
         <span
@@ -1066,6 +1055,26 @@ function ItemRow({
               <RowMenu item={item} />
             )}
           </span>
+          {showSlackColumn ? (
+            <span
+              role="cell"
+              className="flex items-center justify-center @[48rem]:order-8"
+            >
+              {slackUrl ? (
+                <a
+                  href={slackUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open Slack thread for ${item.repo}#${item.number}`}
+                  title="Open Slack thread"
+                  className="inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-white shadow-sm hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <SlackLogo className="size-3.5" />
+                </a>
+              ) : null}
+            </span>
+          ) : null}
         </span>
       </div>
       {notesOpen ? (
@@ -1075,7 +1084,7 @@ function ItemRow({
         >
           <div
             role="cell"
-            aria-colspan={TABLE_COLUMNS.length}
+            aria-colspan={TABLE_COLUMNS.length + (showSlackColumn ? 1 : 0)}
             className="space-y-2"
           >
             <label
@@ -1243,6 +1252,9 @@ function ItemsTable({
       ),
     [slackState.data],
   );
+  const showSlackColumn = (items ?? []).some((item) =>
+    slackLinks.has(itemNoteKey(item.kind, item.repo, item.number)),
+  );
   const [preview, setPreview] = useState<Partial<Record<TableColumn, number>>>(
     {},
   );
@@ -1255,13 +1267,14 @@ function ItemsTable({
   const widths = { ...defaultWidths(kind), ...preferences?.widths, ...preview };
   for (const column of TABLE_COLUMNS)
     widths[column] = clampWidth(column, widths[column], kind);
-  const columns = TABLE_COLUMNS.map((column) =>
-    column === "title" &&
-    preferences?.widths?.title === undefined &&
-    preview.title === undefined
-      ? "minmax(120px, 1fr)"
-      : `${widths[column]}px`,
-  ).join(" ");
+  const columns =
+    TABLE_COLUMNS.map((column) =>
+      column === "title" &&
+      preferences?.widths?.title === undefined &&
+      preview.title === undefined
+        ? "minmax(120px, 1fr)"
+        : `${widths[column]}px`,
+    ).join(" ") + (showSlackColumn ? " 48px" : "");
   const minimum = TABLE_COLUMNS.reduce(
     (total, column) =>
       total +
@@ -1270,7 +1283,7 @@ function ItemsTable({
       preview.title === undefined
         ? 120
         : widths[column]),
-    24 + 6 * 12,
+    24 + 6 * 12 + (showSlackColumn ? 60 : 0),
   );
   const sorted = useMemo(
     () => (items === null ? null : sortItems(items, preferences?.sort)),
@@ -1308,6 +1321,7 @@ function ItemsTable({
             key={`${item.repo}#${item.number}`}
             item={item}
             links={links[`${kind}:${item.repo}#${item.number}`]}
+            showSlackColumn={showSlackColumn}
             slackUrl={slackLinks.get(
               itemNoteKey(item.kind, item.repo, item.number),
             )}
@@ -1452,6 +1466,11 @@ function ItemsTable({
                 />
               </div>
             ))}
+            {showSlackColumn ? (
+              <div role="columnheader" className="text-center">
+                Slack
+              </div>
+            ) : null}
           </div>
           {error !== null && items !== null ? (
             <p
