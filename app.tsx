@@ -1366,12 +1366,12 @@ function ItemsTable({
               <Fragment key={column}>
                 {column === "repo" ? (
                   <div role="columnheader" className="text-center">
-                    GitHub
+                    <span className="sr-only">GitHub</span>
                   </div>
                 ) : null}
                 {column === "repo" && showSlackColumn ? (
                   <div role="columnheader" className="text-center">
-                    Slack
+                    <span className="sr-only">Slack</span>
                   </div>
                 ) : null}
                 <div
