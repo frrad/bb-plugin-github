@@ -54,7 +54,7 @@ export function routeToSubPath(route: Route): string {
   }
 }
 
-interface ParsedQuery {
+interface QueryFilters {
   states: string[];
   assignees: string[];
   authors: string[];
@@ -64,6 +64,10 @@ interface ParsedQuery {
   noAssignee: boolean;
   noLabel: boolean;
   text: string[];
+}
+
+interface ParsedQuery extends QueryFilters {
+  excluded: QueryFilters[];
 }
 
 function tokenizeQuery(query: string): string[] {
@@ -80,8 +84,8 @@ const STATE_VALUES: Record<string, string> = {
   merged: "MERGED",
 };
 
-export function parseQuery(query: string): ParsedQuery {
-  const parsed: ParsedQuery = {
+function emptyFilters(): QueryFilters {
+  return {
     states: [],
     assignees: [],
     authors: [],
@@ -92,30 +96,47 @@ export function parseQuery(query: string): ParsedQuery {
     noLabel: false,
     text: [],
   };
-  for (const token of tokenizeQuery(query)) {
+}
+
+export function parseQuery(query: string): ParsedQuery {
+  const parsed: ParsedQuery = { ...emptyFilters(), excluded: [] };
+  for (const rawToken of tokenizeQuery(query)) {
+    const negative = rawToken.startsWith("-");
+    const token = negative ? rawToken.slice(1) : rawToken;
+    if (!token) continue;
+    const target = negative ? emptyFilters() : parsed;
     const idx = token.indexOf(":");
     const key = idx > 0 ? token.slice(0, idx).toLowerCase() : "";
     const value = idx > 0 ? unquote(token.slice(idx + 1)) : "";
     if (idx > 0 && value.length === 0) continue;
     if (key === "is" || key === "state") {
-      parsed.states.push(
+      target.states.push(
         STATE_VALUES[value.toLowerCase()] ?? value.toUpperCase(),
       );
     } else if (key === "assignee") {
-      parsed.assignees.push(value.toLowerCase());
+      target.assignees.push(value.toLowerCase());
     } else if (key === "author") {
-      parsed.authors.push(value.toLowerCase());
+      target.authors.push(value.toLowerCase());
     } else if (key === "reviewed-by") {
-      parsed.reviewedBy.push(value.toLowerCase());
+      target.reviewedBy.push(value.toLowerCase());
     } else if (key === "label") {
-      parsed.labels.push(value.toLowerCase());
+      target.labels.push(value.toLowerCase());
     } else if (key === "repo") {
-      parsed.repos.push(value.toLowerCase());
+      target.repos.push(value.toLowerCase());
     } else if (key === "no") {
-      if (value.toLowerCase() === "assignee") parsed.noAssignee = true;
-      if (value.toLowerCase() === "label") parsed.noLabel = true;
+      if (value.toLowerCase() === "assignee") target.noAssignee = true;
+      if (value.toLowerCase() === "label") target.noLabel = true;
     } else {
-      parsed.text.push(unquote(token).toLowerCase());
+      target.text.push(unquote(token).toLowerCase());
+    }
+    // Ignore unfinished or unrecognized no: filters while the user is typing.
+    if (
+      negative &&
+      Object.values(target).some((value) =>
+        Array.isArray(value) ? value.length > 0 : value,
+      )
+    ) {
+      parsed.excluded.push(target);
     }
   }
   return parsed;
@@ -124,6 +145,17 @@ export function parseQuery(query: string): ParsedQuery {
 export function matchesQuery(
   item: Item,
   query: ParsedQuery,
+  viewer: string | null,
+): boolean {
+  return (
+    matchesFilters(item, query, viewer) &&
+    !query.excluded.some((filter) => matchesFilters(item, filter, viewer))
+  );
+}
+
+function matchesFilters(
+  item: Item,
+  query: QueryFilters,
   viewer: string | null,
 ): boolean {
   if (query.states.length > 0 && !query.states.includes(item.state)) {
@@ -207,6 +239,15 @@ export function buildSuggestions(
   kind: "issue" | "pr",
   viewer: string | null,
 ): Suggestion[] {
+  if (token.startsWith("-")) {
+    return buildSuggestions(token.slice(1), vocab, kind, viewer).map(
+      (suggestion) => ({
+        ...suggestion,
+        insert: `-${suggestion.insert}`,
+        label: `-${suggestion.label}`,
+      }),
+    );
+  }
   const idx = token.indexOf(":");
   if (idx <= 0) {
     const prefix = token.toLowerCase();

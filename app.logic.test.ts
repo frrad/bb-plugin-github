@@ -53,6 +53,89 @@ describe("github panel routes", () => {
 });
 
 describe("github panel query engine", () => {
+  it("combines reviewer and state filters with an excluded viewer author", () => {
+    const query = parseQuery("reviewed-by:@me is:open -author:@me");
+    const pr: Item = { ...issue, kind: "pr", reviewedBy: ["Octocat"] };
+    expect(matchesQuery(pr, query, "octocat")).toBe(true);
+    expect(matchesQuery({ ...pr, author: "OCTOCAT" }, query, "octocat")).toBe(
+      false,
+    );
+    expect(matchesQuery({ ...pr, state: "CLOSED" }, query, "octocat")).toBe(
+      false,
+    );
+    expect(matchesQuery({ ...pr, reviewedBy: [] }, query, "octocat")).toBe(
+      false,
+    );
+    expect(matchesQuery(pr, query, null)).toBe(false);
+  });
+
+  it.each([
+    ["-author:ALICE", false],
+    ["-author:bob", true],
+    ["-author:@me", true],
+    ["-author:bob -author:alice", false],
+    ["-assignee:@me", false],
+    ["-assignee:bob -assignee:octocat", false],
+    ["-is:open", false],
+    ["-state:closed", true],
+    ['-label:"good first issue"', false],
+    ["-label:feature -label:bug", false],
+    ["-repo:acme/widgets", false],
+    ["-repo:other/repo", true],
+    ["-no:assignee -no:label", true],
+    ["-cache", false],
+    ['-"cache invalidation"', false],
+    ["cache -missing", true],
+    ["cache -", true],
+    ["-author:", true],
+    ["-no:unknown", true],
+  ])("applies exclusion %s", (text, expected) => {
+    expect(matchesQuery(issue, parseQuery(text), "octocat")).toBe(expected);
+  });
+
+  it("negates missing fields and reviewers, including unknown viewers", () => {
+    const pr: Item = { ...issue, kind: "pr", reviewedBy: ["octocat"] };
+    expect(matchesQuery(pr, parseQuery("-reviewed-by:@me"), "octocat")).toBe(
+      false,
+    );
+    expect(matchesQuery(pr, parseQuery("-reviewed-by:bob"), "octocat")).toBe(
+      true,
+    );
+    expect(matchesQuery(pr, parseQuery("-reviewed-by:@me"), null)).toBe(true);
+    expect(matchesQuery(issue, parseQuery("-author:@me"), null)).toBe(true);
+    expect(
+      matchesQuery(
+        { ...issue, assignees: [] },
+        parseQuery("-no:assignee"),
+        null,
+      ),
+    ).toBe(false);
+    expect(
+      matchesQuery({ ...issue, labels: [] }, parseQuery("-no:label"), null),
+    ).toBe(false);
+  });
+
+  it("preserves minus signs when completing negative qualifiers and values", () => {
+    const vocab = {
+      users: ["alice"],
+      labels: ["good first issue"],
+      repos: ["acme/widgets"],
+    };
+    expect(buildSuggestions("-aut", vocab, "pr", "octocat")[0]).toMatchObject({
+      insert: "-author:",
+      label: "-author:",
+    });
+    expect(
+      buildSuggestions("-author:@", vocab, "pr", "octocat")[0],
+    ).toMatchObject({
+      insert: "-author:@me ",
+      icon: { kind: "avatar", login: "octocat" },
+    });
+    expect(buildSuggestions("-label:good", vocab, "pr", null)[0]?.insert).toBe(
+      '-label:"good first issue" ',
+    );
+    expect(buildSuggestions("-rev", vocab, "issue", null)).toEqual([]);
+  });
   it("matches submitted reviewers case-insensitively, including @me and combined filters", () => {
     const pr: Item = { ...issue, kind: "pr", reviewedBy: ["Octocat", "bob"] };
     expect(
@@ -116,6 +199,7 @@ describe("github panel query engine", () => {
       noAssignee: false,
       noLabel: false,
       text: ["#7"],
+      excluded: [],
     });
     expect(matchesQuery(issue, parsed, "octocat")).toBe(true);
     expect(matchesQuery(issue, parsed, null)).toBe(false);
