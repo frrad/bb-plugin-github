@@ -1024,7 +1024,7 @@ function ItemRow({
               <Button
                 size="icon"
                 variant="outline"
-                className="size-7"
+                className="size-6 shrink-0 border-border bg-background shadow-sm [&_[data-icon-root]]:size-3.5"
                 aria-label="Copy GitHub link"
                 onClick={(event) => {
                   event.stopPropagation();

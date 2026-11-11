@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-github-fred",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Browse GitHub issues and pull requests in BB, then send them to agents.",
   "private": true,
   "license": "MIT",
