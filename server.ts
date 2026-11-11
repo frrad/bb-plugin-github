@@ -1364,17 +1364,7 @@ export default async function plugin(bb: BbPluginApi) {
             "Implement a fix or the requested change in this checkout. " +
               `If you open a pull request, include "Fixes #${number}" in its body.`,
           ].join("\n")
-        : [
-            `Review GitHub pull request ${ref}: ${title}`,
-            "",
-            "Read the PR and its diff:",
-            `  gh pr view ${number} -R ${repo} --comments`,
-            `  gh pr diff ${number} -R ${repo}`,
-            "",
-            "Review the change for correctness, missing tests, and design issues. " +
-              "Summarize your findings with file/line references. Do not push " +
-              "changes or post to GitHub unless asked.",
-          ].join("\n");
+        : `have a look at pr${number} but don't do anything yet`;
     const thread = await bb.sdk.threads.spawn({
       projectId,
       environment: { type: "project-default" },
