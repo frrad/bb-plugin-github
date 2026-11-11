@@ -53,6 +53,54 @@ describe("github panel routes", () => {
 });
 
 describe("github panel query engine", () => {
+  it("matches submitted reviewers case-insensitively, including @me and combined filters", () => {
+    const pr: Item = { ...issue, kind: "pr", reviewedBy: ["Octocat", "bob"] };
+    expect(
+      matchesQuery(
+        pr,
+        parseQuery("reviewed-by:OCTOCAT is:open repo:acme/widgets cache"),
+        null,
+      ),
+    ).toBe(true);
+    expect(matchesQuery(pr, parseQuery("reviewed-by:@me"), "octocat")).toBe(
+      true,
+    );
+    expect(matchesQuery(pr, parseQuery("reviewed-by:@me"), null)).toBe(false);
+    expect(matchesQuery(pr, parseQuery("reviewed-by:alice"), "alice")).toBe(
+      false,
+    );
+    expect(
+      matchesQuery(pr, parseQuery("reviewed-by:alice reviewed-by:bob"), null),
+    ).toBe(true);
+    expect(
+      matchesQuery(
+        { ...pr, reviewedBy: undefined },
+        parseQuery("reviewed-by:bob"),
+        null,
+      ),
+    ).toBe(false);
+    expect(
+      matchesQuery(issue, parseQuery("reviewed-by:octocat"), "octocat"),
+    ).toBe(false);
+    expect(matchesQuery(pr, parseQuery("reviewed-by:"), null)).toBe(true);
+  });
+
+  it("suggests reviewer qualifiers and users only for pull requests", () => {
+    const vocab = { users: ["octocat", "alice"], labels: [], repos: [] };
+    expect(
+      buildSuggestions("rev", vocab, "pr", "octocat").map((s) => s.insert),
+    ).toEqual(["reviewed-by:"]);
+    expect(buildSuggestions("rev", vocab, "issue", "octocat")).toEqual([]);
+    expect(
+      buildSuggestions("reviewed-by:@", vocab, "pr", "octocat")[0],
+    ).toMatchObject({ insert: "reviewed-by:@me ", label: "@me (octocat)" });
+    expect(
+      buildSuggestions("reviewed-by:ali", vocab, "pr", null)[0],
+    ).toMatchObject({
+      insert: "reviewed-by:alice ",
+      icon: { kind: "avatar", login: "alice" },
+    });
+  });
   it("parses quoted qualifiers and matches viewer-relative filters", () => {
     const parsed = parseQuery(
       'is:open assignee:@me author:alice label:"good first issue" repo:acme/widgets #7',
@@ -62,6 +110,7 @@ describe("github panel query engine", () => {
       states: ["OPEN"],
       assignees: ["@me"],
       authors: ["alice"],
+      reviewedBy: [],
       labels: ["good first issue"],
       repos: ["acme/widgets"],
       noAssignee: false,

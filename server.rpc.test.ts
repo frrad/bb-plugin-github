@@ -43,6 +43,7 @@ beforeEach(() => {
       title: "Normalize pull details",
       state: "OPEN",
       isDraft: false,
+      reviews: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
       author: { login: "bob", id: "user-bob" },
       labels: { nodes: [{ name: "enhancement" }] },
       assignees: { nodes: [] },

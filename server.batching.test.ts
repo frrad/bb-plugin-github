@@ -19,7 +19,10 @@ vi.mock("@get-bb/plugin-sdk/process", () => ({
       return callback(null, "ok", "");
     expect(options).toEqual({ timeout: 30_000, maxBuffer: 16 * 1024 * 1024 });
     const name = args.find((arg) => arg.startsWith("name="))?.slice(5);
-    const response = fake.responses.get(name ?? "");
+    const cursor = args.find((arg) => arg.startsWith("cursor="))?.slice(7);
+    const response = fake.responses.get(
+      cursor ? `${name}:${cursor}` : (name ?? ""),
+    );
     if (response === undefined)
       return callback(new Error("unexpected command"), "", "");
     if (response instanceof Error)
@@ -37,6 +40,10 @@ function node(number: number, state = "OPEN") {
     author: { login: "robot[bot]" },
     labels: { nodes: [{ name: "bug" }] },
     assignees: { nodes: [{ login: "alice" }] },
+    reviews: {
+      nodes: [] as { author: { login: string } | null }[],
+      pageInfo: { hasNextPage: false, endCursor: null as string | null },
+    },
     body: "Body\ntext",
     url: `https://github.com/acme/one/issues/${number}`,
     updatedAt: "2026-09-10T00:00:00Z",
@@ -114,6 +121,81 @@ it("maps all four lists into SQLite and preserves closed/merged filtering", asyn
     ],
   });
   expect(fake.calls.filter((args) => args[1] === "graphql")).toHaveLength(1);
+});
+
+it("persists all reviewer pages, deduplicates logins, and publishes reviewer-only changes", async () => {
+  const repo = repository();
+  repo.openPrs.nodes[0].reviews = {
+    nodes: [{ author: { login: "alice" } }, { author: null }],
+    pageInfo: { hasNextPage: true, endCursor: "reviews-page-2" },
+  };
+  fake.responses.set("one", response(repo));
+  fake.responses.set(
+    "one:reviews-page-2",
+    JSON.stringify({
+      data: {
+        repository: {
+          pullRequest: {
+            reviews: {
+              nodes: [
+                { author: { login: "alice" } },
+                { author: { login: "bob" } },
+              ],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      },
+    }),
+  );
+  const { harness, bb } = await start();
+  await harness.behavior.callRpc("refresh");
+  expect(
+    await harness.behavior.callRpc("listItems", { kind: "pr", state: "open" }),
+  ).toMatchObject({ items: [{ reviewedBy: ["alice", "bob"] }] });
+  expect(
+    bb.storage
+      .database()
+      .prepare("SELECT reviewed_by FROM items WHERE number = 3")
+      .get(),
+  ).toEqual({ reviewed_by: '["alice","bob"]' });
+  const query = fake.calls
+    .find((args) =>
+      args.some((arg) => arg.startsWith("query=query RepositoryLists")),
+    )!
+    .join(" ");
+  expect(query).toContain(
+    "states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]",
+  );
+  expect(query).not.toContain("PENDING");
+  const changes = () =>
+    harness.realtimeSignals.filter((s) => s.channel === "data-changed").length;
+  const before = changes();
+  repo.openPrs.nodes[0].reviews = {
+    nodes: [],
+    pageInfo: { hasNextPage: false, endCursor: null },
+  };
+  fake.responses.set("one", response(repo));
+  await harness.behavior.callRpc("refresh");
+  expect(changes()).toBe(before + 1);
+  expect(
+    await harness.behavior.callRpc("listItems", { kind: "pr", state: "open" }),
+  ).toMatchObject({ items: [{ reviewedBy: [] }] });
+});
+
+it("keeps cached reviewers when fetching an overflow page fails", async () => {
+  fake.responses.set("one", response());
+  const { harness } = await start();
+  await harness.behavior.callRpc("refresh");
+  const before = await harness.behavior.callRpc("listItems", {});
+  const repo = repository();
+  repo.openPrs.nodes[0].reviews.pageInfo = {
+    hasNextPage: true,
+    endCursor: "missing",
+  };
+  fake.responses.set("one", response(repo));
+  await expect(harness.behavior.callRpc("refresh")).rejects.toThrow();
+  expect(await harness.behavior.callRpc("listItems", {})).toEqual(before);
 });
 
 it("accepts deleted authors and empty connections, discards disabled issues, and clears stale rows on success", async () => {

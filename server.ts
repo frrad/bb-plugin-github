@@ -50,6 +50,7 @@ const itemSchema = z
     author: z.string(),
     labels: z.array(z.string()),
     assignees: z.array(z.string()),
+    reviewedBy: z.array(z.string()).optional(),
     url: z.string(),
     body: z.string(),
     updatedAt: z.string(),
@@ -507,6 +508,15 @@ function requireRepoName(value: string | undefined): string | undefined {
   return value;
 }
 
+const reviewConnectionSchema = z.object({
+  nodes: z
+    .array(z.object({ author: z.object({ login: z.string() }).nullable() }))
+    .max(100),
+  pageInfo: z.object({
+    hasNextPage: z.boolean(),
+    endCursor: z.string().nullable(),
+  }),
+});
 const listNodeSchema = z.object({
   number: itemNumberSchema,
   title: z.string(),
@@ -520,6 +530,7 @@ const listNodeSchema = z.object({
   url: z.string(),
   body: z.string(),
   updatedAt: z.string(),
+  reviews: reviewConnectionSchema.optional(),
 });
 const repositoryListsSchema = z.object({
   data: z.object({
@@ -541,6 +552,7 @@ const repositoryListsSchema = z.object({
             listNodeSchema.extend({
               state: z.literal("OPEN"),
               isDraft: z.boolean(),
+              reviews: reviewConnectionSchema,
             }),
           )
           .max(PR_PAGE),
@@ -551,6 +563,7 @@ const repositoryListsSchema = z.object({
             listNodeSchema.extend({
               state: z.enum(["CLOSED", "MERGED"]),
               isDraft: z.boolean(),
+              reviews: reviewConnectionSchema,
             }),
           )
           .max(CLOSED_PR_PAGE),
@@ -565,6 +578,10 @@ const listFields = `
   assignees(first: 100) { nodes { login } }
   url body updatedAt
 `;
+const reviewFields = `reviews(first: 100, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]) {
+  nodes { author { login } }
+  pageInfo { hasNextPage endCursor }
+}`;
 const repositoryListsQuery = `query RepositoryLists($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
     hasIssuesEnabled
@@ -575,10 +592,10 @@ const repositoryListsQuery = `query RepositoryLists($owner: String!, $name: Stri
       nodes { ${listFields} }
     }
     openPrs: pullRequests(first: ${PR_PAGE}, states: [OPEN], orderBy: {field: CREATED_AT, direction: DESC}) {
-      nodes { ${listFields} isDraft }
+      nodes { ${listFields} isDraft ${reviewFields} }
     }
     closedPrs: pullRequests(first: ${CLOSED_PR_PAGE}, states: [CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
-      nodes { ${listFields} isDraft }
+      nodes { ${listFields} isDraft ${reviewFields} }
     }
   }
 }`;
@@ -603,6 +620,54 @@ async function fetchRepoItems(
   const {
     data: { repository },
   } = repositoryListsSchema.parse(JSON.parse(raw));
+  // Fetch overflow pages before replacing any rows, so failures keep the old cache intact.
+  for (const entry of [
+    ...repository.openPrs.nodes,
+    ...repository.closedPrs.nodes,
+  ]) {
+    let page = entry.reviews;
+    const seen = new Set<string>();
+    while (page.pageInfo.hasNextPage) {
+      const cursor = page.pageInfo.endCursor;
+      if (!cursor || seen.has(cursor))
+        throw new Error("Invalid review pagination cursor");
+      seen.add(cursor);
+      const nextRaw = await gh([
+        "api",
+        "graphql",
+        "--hostname",
+        GH_HOST,
+        "-f",
+        `query=query PullReviews($owner: String!, $name: String!, $number: Int!, $cursor: String!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              ${reviewFields.replace("first: 100,", "first: 100, after: $cursor,")}
+            }
+          }
+        }`,
+        "-f",
+        `owner=${owner}`,
+        "-f",
+        `name=${name}`,
+        "-F",
+        `number=${entry.number}`,
+        "-f",
+        `cursor=${cursor}`,
+      ]);
+      const next = z
+        .object({
+          data: z.object({
+            repository: z.object({
+              pullRequest: z.object({ reviews: reviewConnectionSchema }),
+            }),
+          }),
+          errors: z.array(z.unknown()).max(0).optional(),
+        })
+        .parse(JSON.parse(nextRaw));
+      page = next.data.repository.pullRequest.reviews;
+      entry.reviews.nodes.push(...page.nodes);
+    }
+  }
   const toItems = (
     nodes: z.infer<typeof listNodeSchema>[],
     kind: "issue" | "pr",
@@ -619,6 +684,17 @@ async function fetchRepoItems(
         : `app/${entry.author?.login ?? ""}`,
       labels: entry.labels.nodes.map((label) => label.name),
       assignees: entry.assignees.nodes.map((user) => user.login),
+      ...(kind === "pr"
+        ? {
+            reviewedBy: [
+              ...new Set(
+                entry.reviews?.nodes.flatMap((review) =>
+                  review.author ? [review.author.login] : [],
+                ) ?? [],
+              ),
+            ],
+          }
+        : {}),
       url: entry.url,
       body: entry.body,
       updatedAt: entry.updatedAt,
@@ -814,6 +890,7 @@ export default async function plugin(bb: BbPluginApi) {
       repo TEXT NOT NULL, kind TEXT NOT NULL, number INTEGER NOT NULL,
       url TEXT NOT NULL, PRIMARY KEY (repo, kind, number)
     )`,
+    `ALTER TABLE items ADD COLUMN reviewed_by TEXT NOT NULL DEFAULT '[]'`,
   ]);
 
   function parseStringArray(raw: unknown): string[] {
@@ -835,6 +912,9 @@ export default async function plugin(bb: BbPluginApi) {
       author: String(row.author),
       labels: parseStringArray(row.labels),
       assignees: parseStringArray(row.assignees),
+      ...(row.kind === "pr"
+        ? { reviewedBy: parseStringArray(row.reviewed_by) }
+        : {}),
       url: String(row.url),
       body: String(row.body),
       updatedAt: String(row.updated_at),
@@ -895,8 +975,8 @@ export default async function plugin(bb: BbPluginApi) {
 
   function replaceRepoRows(repo: string, items: CachedItem[]): void {
     const insert = db.prepare(
-      `INSERT INTO items (repo, number, kind, title, state, author, labels, assignees, url, body, updated_at, is_draft)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO items (repo, number, kind, title, state, author, labels, assignees, url, body, updated_at, is_draft, reviewed_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     db.transaction(() => {
       db.prepare("DELETE FROM items WHERE repo = ?").run(repo);
@@ -914,6 +994,7 @@ export default async function plugin(bb: BbPluginApi) {
           item.body,
           item.updatedAt,
           item.isDraft ? 1 : 0,
+          JSON.stringify(item.reviewedBy ?? []),
         );
       }
     })();
@@ -972,7 +1053,7 @@ export default async function plugin(bb: BbPluginApi) {
     const before = JSON.stringify(
       db
         .prepare(
-          "SELECT repo, kind, number, updated_at, is_draft FROM items ORDER BY repo, kind, number",
+          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by FROM items ORDER BY repo, kind, number",
         )
         .all(),
     );
@@ -1016,7 +1097,7 @@ export default async function plugin(bb: BbPluginApi) {
     const after = JSON.stringify(
       db
         .prepare(
-          "SELECT repo, kind, number, updated_at, is_draft FROM items ORDER BY repo, kind, number",
+          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by FROM items ORDER BY repo, kind, number",
         )
         .all(),
     );

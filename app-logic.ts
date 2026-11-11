@@ -58,6 +58,7 @@ interface ParsedQuery {
   states: string[];
   assignees: string[];
   authors: string[];
+  reviewedBy: string[];
   labels: string[];
   repos: string[];
   noAssignee: boolean;
@@ -84,6 +85,7 @@ export function parseQuery(query: string): ParsedQuery {
     states: [],
     assignees: [],
     authors: [],
+    reviewedBy: [],
     labels: [],
     repos: [],
     noAssignee: false,
@@ -103,6 +105,8 @@ export function parseQuery(query: string): ParsedQuery {
       parsed.assignees.push(value.toLowerCase());
     } else if (key === "author") {
       parsed.authors.push(value.toLowerCase());
+    } else if (key === "reviewed-by") {
+      parsed.reviewedBy.push(value.toLowerCase());
     } else if (key === "label") {
       parsed.labels.push(value.toLowerCase());
     } else if (key === "repo") {
@@ -140,6 +144,19 @@ export function matchesQuery(
     );
     if (!wanted.includes(author)) return false;
   }
+  if (query.reviewedBy.length > 0) {
+    const wanted = query.reviewedBy.map((login) =>
+      login === "@me" ? (viewer?.toLowerCase() ?? "\u0000") : login,
+    );
+    if (
+      item.kind !== "pr" ||
+      !(item.reviewedBy ?? []).some((login) =>
+        wanted.includes(login.toLowerCase()),
+      )
+    ) {
+      return false;
+    }
+  }
   if (query.labels.length > 0) {
     const labels = item.labels.map((label) => label.toLowerCase());
     if (!query.labels.some((label) => labels.includes(label))) return false;
@@ -174,6 +191,7 @@ const QUALIFIER_KEYS: Array<{ key: string; hint: string }> = [
   { key: "is:", hint: "state — open, closed, merged" },
   { key: "assignee:", hint: "assigned user, or @me" },
   { key: "author:", hint: "opened by" },
+  { key: "reviewed-by:", hint: "reviewed by user, or @me" },
   { key: "label:", hint: "has label" },
   { key: "repo:", hint: "in repository" },
   { key: "no:", hint: "missing — assignee, label" },
@@ -192,13 +210,15 @@ export function buildSuggestions(
   const idx = token.indexOf(":");
   if (idx <= 0) {
     const prefix = token.toLowerCase();
-    return QUALIFIER_KEYS.filter((entry) => entry.key.startsWith(prefix)).map(
-      (entry) => ({
-        insert: entry.key,
-        label: entry.key,
-        hint: entry.hint,
-      }),
-    );
+    return QUALIFIER_KEYS.filter(
+      (entry) =>
+        (kind === "pr" || entry.key !== "reviewed-by:") &&
+        entry.key.startsWith(prefix),
+    ).map((entry) => ({
+      insert: entry.key,
+      label: entry.key,
+      hint: entry.hint,
+    }));
   }
   const key = token.slice(0, idx).toLowerCase();
   const partial = unquote(token.slice(idx + 1)).toLowerCase();
@@ -216,7 +236,11 @@ export function buildSuggestions(
       },
     }));
   }
-  if (key === "assignee" || key === "author") {
+  if (
+    key === "assignee" ||
+    key === "author" ||
+    (key === "reviewed-by" && kind === "pr")
+  ) {
     const users = ["@me", ...vocab.users];
     return users.filter(matches).map((login) => {
       const avatarLogin = login === "@me" ? viewer : login;

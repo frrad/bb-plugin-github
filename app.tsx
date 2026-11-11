@@ -397,6 +397,7 @@ function FilterBar({
     for (const item of items ?? []) {
       if (item.author.length > 0) users.add(item.author);
       for (const login of item.assignees) users.add(login);
+      for (const login of item.reviewedBy ?? []) users.add(login);
       for (const label of item.labels) labels.add(label);
     }
     return {
