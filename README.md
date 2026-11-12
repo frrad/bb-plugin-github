@@ -27,6 +27,11 @@ bb plugin install https://github.com/frrad/bb-plugin-github
   Drag the divider at a header's right edge to resize that column; double-click
   it to reset its width. Focus a divider and use the arrow keys to resize with
   the keyboard. Sorting and widths are saved separately for each search.
+- **Commenter filter**: use `commenter:@me` (or a username), including exclusions
+  such as `-commenter:octocat`. For example, `is:open commenter:@me -author:@me`
+  finds open items you commented on but did not author. This uses GitHub conversation
+  comments, not inline review comments, within the synced repository/item limits.
+  Refresh after commenting to update the cached results; no separate follow list is stored.
 - **Per-item notes**: expand the arrow beside an issue or PR title to edit notes.
   Notes autosave on the BB server and are available from any device connected to
   it, shared across searches for the same item. A small dot marks items with notes.
@@ -81,7 +86,7 @@ bb plugin reload github-fred
 
 A background service refreshes immediately on startup, then waits 15 minutes
 after each completed sync. Each tracked repository uses one bounded `gh api graphql`
-request per sweep, using the existing GitHub CLI authentication. Two repositories
+request per sweep, plus overflow pages for comments and reviews, using the existing GitHub CLI authentication. Two repositories
 are fetched concurrently, respecting BB's GitHub process limit. Refresh requests
 share an active sweep, and the refresh button shows completed/total repositories
 and any failed repository count. Failed repositories keep their cached rows. It fetches

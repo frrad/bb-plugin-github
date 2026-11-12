@@ -194,6 +194,7 @@ describe("github panel query engine", () => {
       assignees: ["@me"],
       authors: ["alice"],
       reviewedBy: [],
+      commenters: [],
       labels: ["good first issue"],
       repos: ["acme/widgets"],
       noAssignee: false,
@@ -255,5 +256,58 @@ describe("github panel query engine", () => {
     expect(
       buildSuggestions("author:ali", vocab, "issue", "octocat")[0]?.icon,
     ).toEqual({ kind: "avatar", login: "alice" });
+  });
+});
+
+describe("commenter filters", () => {
+  it.each(["issue", "pr"] as const)(
+    "combines %s comments, state, authors, and exclusions",
+    (kind) => {
+      const item = { ...issue, kind, commenters: ["Octocat", "bob"] };
+      const query = parseQuery("is:open commenter:@me -author:@me");
+      expect(matchesQuery(item, query, "octocat")).toBe(true);
+      expect(
+        matchesQuery({ ...item, author: "octocat" }, query, "octocat"),
+      ).toBe(false);
+      expect(matchesQuery({ ...item, state: "CLOSED" }, query, "octocat")).toBe(
+        false,
+      );
+      expect(matchesQuery({ ...item, commenters: [] }, query, "octocat")).toBe(
+        false,
+      );
+      expect(matchesQuery(item, query, null)).toBe(false);
+      expect(matchesQuery(item, parseQuery("commenter:BOB"), null)).toBe(true);
+      expect(matchesQuery(item, parseQuery("-commenter:@me"), "octocat")).toBe(
+        false,
+      );
+      expect(matchesQuery(issue, parseQuery("commenter:@me"), "octocat")).toBe(
+        false,
+      );
+    },
+  );
+
+  it("suggests commenters and @me for either item type", () => {
+    for (const kind of ["issue", "pr"] as const) {
+      expect(
+        buildSuggestions(
+          "comm",
+          { users: [], labels: [], repos: [] },
+          kind,
+          "octocat",
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ insert: "commenter:" }),
+        ]),
+      );
+      expect(
+        buildSuggestions(
+          "commenter:",
+          { users: ["alice"], labels: [], repos: [] },
+          kind,
+          "octocat",
+        ).map((entry) => entry.insert),
+      ).toEqual(["commenter:@me ", "commenter:alice "]);
+    }
   });
 });

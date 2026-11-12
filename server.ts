@@ -51,6 +51,7 @@ const itemSchema = z
     labels: z.array(z.string()),
     assignees: z.array(z.string()),
     reviewedBy: z.array(z.string()).optional(),
+    commenters: z.array(z.string()).optional(),
     url: z.string(),
     body: z.string(),
     updatedAt: z.string(),
@@ -531,6 +532,7 @@ const listNodeSchema = z.object({
   body: z.string(),
   updatedAt: z.string(),
   reviews: reviewConnectionSchema.optional(),
+  comments: reviewConnectionSchema.optional(),
 });
 const repositoryListsSchema = z.object({
   data: z.object({
@@ -577,6 +579,10 @@ const listFields = `
   labels(first: 100) { nodes { name } }
   assignees(first: 100) { nodes { login } }
   url body updatedAt
+  comments(first: 100) {
+    nodes { author { login } }
+    pageInfo { hasNextPage endCursor }
+  }
 `;
 const reviewFields = `reviews(first: 100, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]) {
   nodes { author { login } }
@@ -668,6 +674,66 @@ async function fetchRepoItems(
       entry.reviews.nodes.push(...page.nodes);
     }
   }
+  for (const [kind, entries] of [
+    [
+      "issue",
+      repository.hasIssuesEnabled
+        ? [...repository.openIssues.nodes, ...repository.closedIssues.nodes]
+        : [],
+    ],
+    [
+      "pullRequest",
+      [...repository.openPrs.nodes, ...repository.closedPrs.nodes],
+    ],
+  ] as const) {
+    for (const entry of entries) {
+      let page = entry.comments;
+      const seen = new Set<string>();
+      while (page?.pageInfo.hasNextPage) {
+        const cursor = page.pageInfo.endCursor;
+        if (!cursor || seen.has(cursor))
+          throw new Error("Invalid comment pagination cursor");
+        seen.add(cursor);
+        const raw = await gh([
+          "api",
+          "graphql",
+          "--hostname",
+          GH_HOST,
+          "-f",
+          `query=query ItemComments($owner: String!, $name: String!, $number: Int!, $cursor: String!) {
+            repository(owner: $owner, name: $name) {
+              item: ${kind}(number: $number) {
+                comments(first: 100, after: $cursor) {
+                  nodes { author { login } }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+            }
+          }`,
+          "-f",
+          `owner=${owner}`,
+          "-f",
+          `name=${name}`,
+          "-F",
+          `number=${entry.number}`,
+          "-f",
+          `cursor=${cursor}`,
+        ]);
+        const next = z
+          .object({
+            data: z.object({
+              repository: z.object({
+                item: z.object({ comments: reviewConnectionSchema }),
+              }),
+            }),
+            errors: z.array(z.unknown()).max(0).optional(),
+          })
+          .parse(JSON.parse(raw));
+        page = next.data.repository.item.comments;
+        entry.comments!.nodes.push(...page.nodes);
+      }
+    }
+  }
   const toItems = (
     nodes: z.infer<typeof listNodeSchema>[],
     kind: "issue" | "pr",
@@ -682,6 +748,13 @@ async function fetchRepoItems(
       author: entry.author?.id
         ? entry.author.login
         : `app/${entry.author?.login ?? ""}`,
+      commenters: [
+        ...new Set(
+          entry.comments?.nodes.flatMap((comment) =>
+            comment.author ? [comment.author.login] : [],
+          ) ?? [],
+        ),
+      ],
       labels: entry.labels.nodes.map((label) => label.name),
       assignees: entry.assignees.nodes.map((user) => user.login),
       ...(kind === "pr"
@@ -891,6 +964,7 @@ export default async function plugin(bb: BbPluginApi) {
       url TEXT NOT NULL, PRIMARY KEY (repo, kind, number)
     )`,
     `ALTER TABLE items ADD COLUMN reviewed_by TEXT NOT NULL DEFAULT '[]'`,
+    `ALTER TABLE items ADD COLUMN commenters TEXT NOT NULL DEFAULT '[]'`,
   ]);
 
   function parseStringArray(raw: unknown): string[] {
@@ -910,6 +984,9 @@ export default async function plugin(bb: BbPluginApi) {
       state: String(row.state),
       ...(row.is_draft === 1 ? { isDraft: true } : {}),
       author: String(row.author),
+      ...(parseStringArray(row.commenters).length > 0
+        ? { commenters: parseStringArray(row.commenters) }
+        : {}),
       labels: parseStringArray(row.labels),
       assignees: parseStringArray(row.assignees),
       ...(row.kind === "pr"
@@ -975,8 +1052,8 @@ export default async function plugin(bb: BbPluginApi) {
 
   function replaceRepoRows(repo: string, items: CachedItem[]): void {
     const insert = db.prepare(
-      `INSERT INTO items (repo, number, kind, title, state, author, labels, assignees, url, body, updated_at, is_draft, reviewed_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO items (repo, number, kind, title, state, author, labels, assignees, url, body, updated_at, is_draft, reviewed_by, commenters)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     db.transaction(() => {
       db.prepare("DELETE FROM items WHERE repo = ?").run(repo);
@@ -995,6 +1072,7 @@ export default async function plugin(bb: BbPluginApi) {
           item.updatedAt,
           item.isDraft ? 1 : 0,
           JSON.stringify(item.reviewedBy ?? []),
+          JSON.stringify(item.commenters ?? []),
         );
       }
     })();
@@ -1053,7 +1131,7 @@ export default async function plugin(bb: BbPluginApi) {
     const before = JSON.stringify(
       db
         .prepare(
-          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by FROM items ORDER BY repo, kind, number",
+          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by, commenters FROM items ORDER BY repo, kind, number",
         )
         .all(),
     );
@@ -1097,7 +1175,7 @@ export default async function plugin(bb: BbPluginApi) {
     const after = JSON.stringify(
       db
         .prepare(
-          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by FROM items ORDER BY repo, kind, number",
+          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by, commenters FROM items ORDER BY repo, kind, number",
         )
         .all(),
     );
@@ -1207,7 +1285,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
   async function scanThreadLinks(): Promise<ThreadLinkScan> {
     const threads: Awaited<ReturnType<typeof bb.sdk.threads.list>> = [];
-    for (let offset = 0; ; ) {
+    for (let offset = 0; ;) {
       const page = await bb.sdk.threads.list({
         archived: false,
         includeHidden: false,
@@ -1484,8 +1562,7 @@ export default async function plugin(bb: BbPluginApi) {
             "SELECT body, revision FROM item_notes WHERE repo = ? AND kind = ? AND number = ?",
           )
           .get(input.repo, input.kind, input.number) as
-          | { body: string; revision: number }
-          | undefined;
+          { body: string; revision: number } | undefined;
         const current = stored ?? { body: "", revision: 0 };
         if (
           (input.importOnly && stored !== undefined) ||

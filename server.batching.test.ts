@@ -332,3 +332,82 @@ it("caches draft flags and publishes changes when only draft status changes", as
   const result = githubRpcContract.listItems.output.parse(await getOpenPrs());
   expect(result.items[0].isDraft ?? false).toBe(false);
 });
+
+it("syncs all conversation comment pages for issues and PRs and retains rows on overflow failure", async () => {
+  const comments = (
+    logins: (string | null)[],
+    cursor: string | null = null,
+  ) => ({
+    nodes: logins.map((login) => ({
+      author: login === null ? null : { login },
+    })),
+    pageInfo: { hasNextPage: cursor !== null, endCursor: cursor },
+  });
+  const repo = repository();
+  Object.assign(repo.openIssues.nodes[0], {
+    comments: comments(["alice", null], "issue-next"),
+  });
+  Object.assign(repo.openPrs.nodes[0], {
+    comments: comments(["bob"], "pr-next"),
+  });
+  fake.responses.set("one", response(repo));
+  for (const [cursor, logins] of [
+    ["issue-next", ["alice", "carol"]],
+    ["pr-next", ["dave"]],
+  ] as const) {
+    fake.responses.set(
+      `one:${cursor}`,
+      JSON.stringify({
+        data: {
+          repository: {
+            item: { comments: comments([...logins]) },
+          },
+        },
+      }),
+    );
+  }
+  const { harness } = await start();
+  await harness.behavior.callRpc("refresh");
+  const before = await harness.behavior.callRpc("listItems", {});
+  expect(before).toMatchObject({
+    items: expect.arrayContaining([
+      expect.objectContaining({
+        kind: "issue",
+        number: 1,
+        commenters: ["alice", "carol"],
+      }),
+      expect.objectContaining({
+        kind: "pr",
+        number: 3,
+        commenters: ["bob", "dave"],
+      }),
+    ]),
+  });
+  const queries = fake.calls
+    .flat()
+    .filter((arg) => arg.startsWith("query=query ItemComments"));
+  expect(queries.some((query) => query.includes("item: issue("))).toBe(true);
+  expect(queries.some((query) => query.includes("item: pullRequest("))).toBe(
+    true,
+  );
+  fake.responses.set("one:pr-next", new Error("unavailable"));
+  await expect(harness.behavior.callRpc("refresh")).rejects.toThrow();
+  expect(await harness.behavior.callRpc("listItems", {})).toEqual(before);
+  const changesBeforeClear = harness.realtimeSignals.filter(
+    (signal) => signal.channel === "data-changed",
+  ).length;
+  Object.assign(repo.openIssues.nodes[0], { comments: comments([]) });
+  Object.assign(repo.openPrs.nodes[0], { comments: comments([]) });
+  fake.responses.set("one", response(repo));
+  await harness.behavior.callRpc("refresh");
+  expect(
+    harness.realtimeSignals.filter(
+      (signal) => signal.channel === "data-changed",
+    ),
+  ).toHaveLength(changesBeforeClear + 1);
+  expect(await harness.behavior.callRpc("listItems", {})).not.toMatchObject({
+    items: expect.arrayContaining([
+      expect.objectContaining({ commenters: ["bob", "dave"] }),
+    ]),
+  });
+});

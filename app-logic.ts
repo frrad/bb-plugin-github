@@ -59,6 +59,7 @@ interface QueryFilters {
   assignees: string[];
   authors: string[];
   reviewedBy: string[];
+  commenters: string[];
   labels: string[];
   repos: string[];
   noAssignee: boolean;
@@ -90,6 +91,7 @@ function emptyFilters(): QueryFilters {
     assignees: [],
     authors: [],
     reviewedBy: [],
+    commenters: [],
     labels: [],
     repos: [],
     noAssignee: false,
@@ -117,6 +119,8 @@ export function parseQuery(query: string): ParsedQuery {
       target.assignees.push(value.toLowerCase());
     } else if (key === "author") {
       target.authors.push(value.toLowerCase());
+    } else if (key === "commenter") {
+      target.commenters.push(value.toLowerCase());
     } else if (key === "reviewed-by") {
       target.reviewedBy.push(value.toLowerCase());
     } else if (key === "label") {
@@ -189,6 +193,17 @@ function matchesFilters(
       return false;
     }
   }
+  if (query.commenters.length > 0) {
+    const wanted = query.commenters.map((login) =>
+      login === "@me" ? (viewer?.toLowerCase() ?? "\u0000") : login,
+    );
+    if (
+      !(item.commenters ?? []).some((login) =>
+        wanted.includes(login.toLowerCase()),
+      )
+    )
+      return false;
+  }
   if (query.labels.length > 0) {
     const labels = item.labels.map((label) => label.toLowerCase());
     if (!query.labels.some((label) => labels.includes(label))) return false;
@@ -223,6 +238,7 @@ const QUALIFIER_KEYS: Array<{ key: string; hint: string }> = [
   { key: "is:", hint: "state — open, closed, merged" },
   { key: "assignee:", hint: "assigned user, or @me" },
   { key: "author:", hint: "opened by" },
+  { key: "commenter:", hint: "commented by user, or @me" },
   { key: "reviewed-by:", hint: "reviewed by user, or @me" },
   { key: "label:", hint: "has label" },
   { key: "repo:", hint: "in repository" },
@@ -280,6 +296,7 @@ export function buildSuggestions(
   if (
     key === "assignee" ||
     key === "author" ||
+    key === "commenter" ||
     (key === "reviewed-by" && kind === "pr")
   ) {
     const users = ["@me", ...vocab.users];
