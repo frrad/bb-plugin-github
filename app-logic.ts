@@ -333,3 +333,28 @@ export function buildSuggestions(
   }
   return [];
 }
+
+// Full class strings so Tailwind can see them at build time.
+const REPO_BADGE_COLORS = [
+  "bg-red-500/15 text-red-700 dark:text-red-300",
+  "bg-orange-500/15 text-orange-700 dark:text-orange-300",
+  "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  "bg-lime-500/15 text-lime-700 dark:text-lime-300",
+  "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  "bg-teal-500/15 text-teal-700 dark:text-teal-300",
+  "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
+  "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
+  "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+  "bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300",
+  "bg-pink-500/15 text-pink-700 dark:text-pink-300",
+] as const;
+
+/** Stable color classes for a repo badge, derived from the full repo name. */
+export function repoBadgeColor(repo: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < repo.length; i++) {
+    hash = Math.imul(hash ^ repo.charCodeAt(i), 0x01000193);
+  }
+  return REPO_BADGE_COLORS[(hash >>> 0) % REPO_BADGE_COLORS.length];
+}

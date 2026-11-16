@@ -33,6 +33,7 @@ import {
   type Route,
   type Suggestion,
   type SuggestionIcon,
+  repoBadgeColor,
 } from "./app-logic.js";
 import type { githubRpcContract } from "./server.js";
 import { toast } from "sonner";
@@ -313,6 +314,18 @@ function ThreadPills({ links }: { links: ThreadLink[] | undefined }) {
         </Badge>
       ))}
     </span>
+  );
+}
+
+function RepoBadge({ repo, className }: { repo: string; className?: string }) {
+  return (
+    <Badge
+      title={repo}
+      variant="secondary"
+      className={`${repoBadgeColor(repo)} truncate px-1.5 font-medium ${className ?? ""}`}
+    >
+      <span className="truncate">{repo.split("/").pop()}</span>
+    </Badge>
   );
 }
 
@@ -962,12 +975,7 @@ function ItemRow({
             <span className="min-w-0 flex-1 line-clamp-3 text-sm font-medium leading-snug text-foreground @[48rem]:line-clamp-1 @[48rem]:leading-normal">
               {item.title}
             </span>
-            <span
-              className="text-xs text-muted-foreground @[48rem]:hidden"
-              title={item.repo}
-            >
-              {item.repo.split("/").pop()}
-            </span>
+            <RepoBadge repo={item.repo} className="@[48rem]:hidden" />
             <LabelChips
               labels={item.labels}
               className="hidden shrink-0 @[60rem]:flex"
@@ -1067,12 +1075,8 @@ function ItemRow({
           >
             #{item.number}
           </span>
-          <span
-            role="cell"
-            className={`${COL.repo} text-xs text-muted-foreground @[48rem]:order-3`}
-            title={item.repo}
-          >
-            {item.repo.split("/").pop()}
+          <span role="cell" className={`${COL.repo} @[48rem]:order-3`}>
+            <RepoBadge repo={item.repo} className="max-w-full" />
           </span>
           <span
             role="cell"

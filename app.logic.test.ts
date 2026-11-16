@@ -4,6 +4,7 @@ import {
   matchesQuery,
   parseQuery,
   parseSubPath,
+  repoBadgeColor,
   routeToSubPath,
   type Item,
   type Route,
@@ -309,5 +310,17 @@ describe("commenter filters", () => {
         ).map((entry) => entry.insert),
       ).toEqual(["commenter:@me ", "commenter:alice "]);
     }
+  });
+});
+
+describe("repoBadgeColor", () => {
+  it("is stable for a repo and varies across repos", () => {
+    expect(repoBadgeColor("acme/widgets")).toBe(repoBadgeColor("acme/widgets"));
+    const colors = new Set(
+      ["acme/widgets", "acme/gadgets", "acme/api", "acme/web", "acme/docs"].map(
+        repoBadgeColor,
+      ),
+    );
+    expect(colors.size).toBeGreaterThan(1);
   });
 });

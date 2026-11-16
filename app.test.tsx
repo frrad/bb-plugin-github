@@ -939,7 +939,10 @@ describe("GitHub app navigation", () => {
     expect(
       slot
         .getAllByText("bb")
-        .some((cell) => cell.getAttribute("title") === "get-bb/bb"),
+        .some(
+          (cell) =>
+            cell.closest("[title]")?.getAttribute("title") === "get-bb/bb",
+        ),
     ).toBe(true);
     expect(await slot.findByText("draft")).toBeTruthy();
     const github = await slot.findByRole("link", {
