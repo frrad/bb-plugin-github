@@ -27,7 +27,9 @@
     "LICENSE",
     "table-layout.ts",
     "item-notes.ts",
-    "slack-link.ts"
+    "slack-link.ts",
+    "thread-pr-summary.tsx",
+    "thread-summary-layout.ts"
   ],
   "engines": {
     "bb": ">=0.48.1",

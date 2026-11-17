@@ -57,6 +57,11 @@ bb plugin install https://github.com/frrad/bb-plugin-github
   explicit PR links, with explicit links retained as a fallback. The open panel
   rechecks links about every 30 seconds and after thread lifecycle changes.
   Issue links continue to come from Start actions.
+- **Thread PR summary**: a linked thread shows its PR title, clickable Slack
+  badge, and private note in the free space to the left of the transcript.
+  It appears only when at least 220 px fits with padding, without moving the
+  conversation. Narrow views and ambiguous split panes hide it. Notes and Slack
+  references share the board's saved data; PR associations refresh periodically.
 - **Homepage section**: recent open issues with the same Send agent buttons.
 - **Mentions**: `@` or `#` in any composer completes GitHub issues and PRs; the
   selected item's title/body/state is attached as agent context at send time.

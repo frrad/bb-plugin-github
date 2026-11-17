@@ -16,6 +16,7 @@ import {
   experimental_copyToClipboard,
   UrlLink,
   useBbNavigate,
+  useBbContext,
   useRealtime,
   useRpc,
   type PluginNavPanelProps,
@@ -71,6 +72,8 @@ import { itemNoteKey, itemNotes, type NotesTransport } from "./item-notes.js";
 import { normalizeSlackLink } from "./slack-link.js";
 import { GitHubLogo } from "./components/github-logo.js";
 import { SlackLogo } from "./components/slack-logo.js";
+import { ThreadPrSummary, useSummaryPosition } from "./thread-pr-summary.js";
+import type { SummaryPosition } from "./thread-summary-layout.js";
 import { EmptyState } from "./components/empty-state.js";
 import { Icon } from "@/components/ui/icon";
 import {
@@ -2761,7 +2764,140 @@ function SearchSection({
   );
 }
 
+function ThreadPrOverlay() {
+  const { threadId } = useBbContext();
+  return threadId ? (
+    <ThreadPrMargin key={threadId} threadId={threadId} />
+  ) : null;
+}
+
+function ThreadPrMargin({ threadId }: { threadId: string }) {
+  const position = useSummaryPosition(threadId);
+  return position ? (
+    <LinkedThreadPr threadId={threadId} position={position} />
+  ) : null;
+}
+
+function LinkedThreadPr({
+  threadId,
+  position,
+}: {
+  threadId: string;
+  position: SummaryPosition;
+}) {
+  const rpc = useRpc<typeof githubRpcContract>();
+  const [pull, setPull] = useState<{ repo: string; number: number } | null>(
+    null,
+  );
+  const request = useRef(0);
+  const resolve = useCallback(() => {
+    const generation = ++request.current;
+    void rpc.call("pullForThread", { threadId }).then(
+      (result) => {
+        if (generation === request.current) setPull(result.pull);
+      },
+      () => {
+        if (generation === request.current) setPull(null);
+      },
+    );
+  }, [rpc, threadId]);
+  useEffect(() => {
+    resolve();
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") resolve();
+    }, 30_000);
+    return () => {
+      clearInterval(timer);
+      request.current++;
+    };
+  }, [resolve]);
+  useRealtime("links-changed", resolve);
+  useRealtime("data-changed", resolve);
+  return pull ? (
+    <LinkedPrSummary
+      key={`${pull.repo}#${pull.number}`}
+      {...pull}
+      position={position}
+    />
+  ) : null;
+}
+
+function LinkedPrSummary({
+  repo,
+  number,
+  position,
+}: {
+  repo: string;
+  number: number;
+  position: SummaryPosition;
+}) {
+  const rpc = useRpc<typeof githubRpcContract>();
+  const { items } = useItems("pr");
+  const item = items?.find(
+    (entry) =>
+      entry.repo.toLowerCase() === repo.toLowerCase() &&
+      entry.number === number,
+  );
+  const [fallback, setFallback] = useState<{
+    title: string;
+    url: string;
+  } | null>(null);
+  useEffect(() => {
+    if (items === null || item) return;
+    let cancelled = false;
+    // Native links can point at a PR outside the board's cached item limit.
+    void rpc.call("getPull", { repo, number }).then(
+      ({ pull }) => {
+        if (!cancelled) setFallback({ title: pull.title, url: pull.url });
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [rpc, repo, number, items, item]);
+  const transport = useNotesTransport();
+  useEffect(() => {
+    void itemNotes.refresh(transport);
+  }, [transport]);
+  useRealtime("notes-changed", () => {
+    void itemNotes.refresh(transport);
+  });
+  const key = itemNoteKey("pr", repo, number);
+  const subscribe = useCallback(
+    (listener: () => void) => itemNotes.subscribe(key, listener),
+    [key],
+  );
+  const snapshot = useCallback(() => itemNotes.getSnapshot(key), [key]);
+  const note = useSyncExternalStore(subscribe, snapshot);
+  const { state } = useSlackLinks();
+  const slackUrl = state.data?.find(
+    (entry) =>
+      entry.kind === "pr" &&
+      entry.repo.toLowerCase() === repo.toLowerCase() &&
+      entry.number === number,
+  )?.url;
+  const details = item ?? fallback;
+  if (!details) return null;
+  return (
+    <ThreadPrSummary
+      position={position}
+      repo={repo}
+      number={number}
+      title={details.title}
+      url={details.url}
+      slackUrl={slackUrl}
+      note={note.body}
+      noteStatus={note.error ?? (!note.loaded ? "Loading note…" : undefined)}
+    />
+  );
+}
+
 export default definePluginApp((app) => {
+  app.slots.experimental_appOverlay({
+    id: "linked-pr-summary",
+    component: ThreadPrOverlay,
+  });
   app.slots.navPanel({
     id: "github-fred",
     title: "GitHub Fred",
