@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act } from "react";
 import { fireEvent, waitFor } from "@testing-library/dom";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { createThreadPullCache, threadPullCache } from "./thread-pull-cache.js";
 import { panelCache } from "./panel-cache.js";
 import { itemNotes } from "./item-notes.js";
 
@@ -13,6 +14,7 @@ let disconnect: ReturnType<typeof vi.fn>;
 let pane: HTMLElement;
 const mounted: Array<{ lifecycle: { unmount(): void } }> = [];
 beforeEach(() => {
+  threadPullCache.clear();
   for (const cache of Object.values(panelCache)) cache.clear();
   itemNotes.clear();
   columnLeft = 900;
@@ -239,4 +241,65 @@ it("renders from the board's cached association without waiting for the backgrou
   expect(
     slot.inspection.rpcCalls.some((call) => call.method === "getPull"),
   ).toBe(false);
+});
+
+it("keeps a visited thread's summary visible while its next association lookup is pending", async () => {
+  const first = mount();
+  await first.findByText("Improve scheduling");
+  first.lifecycle.unmount();
+  mounted.pop();
+  const next = mount("thread-one", true, {
+    pullForThread: () => new Promise(() => {}),
+  });
+  await next.findByText("Improve scheduling");
+});
+it("starts resolving a PR before the transcript has mounted", async () => {
+  pane.remove();
+  const slot = mount();
+  await waitFor(() =>
+    expect(
+      slot.inspection.rpcCalls.some((call) => call.method === "pullForThread"),
+    ).toBe(true),
+  );
+  expect(slot.queryByRole("complementary")).toBeNull();
+  document.body.append(pane);
+  await slot.findByText("Improve scheduling");
+});
+it("removes a cached association when background validation confirms it was unlinked", async () => {
+  threadPullCache.set("thread-one", { repo: "acme/widgets", number: 42 });
+  const slot = mount("thread-one", false);
+  await waitFor(() => expect(threadPullCache.get("thread-one")).toBeNull());
+  expect(slot.queryByRole("complementary")).toBeNull();
+});
+it("keeps the cached summary when background validation fails", async () => {
+  threadPullCache.set("thread-one", { repo: "acme/widgets", number: 42 });
+  const slot = mount("thread-one", true, {
+    pullForThread: () => Promise.reject(new Error("offline")),
+  });
+  await slot.findByText("Improve scheduling");
+});
+
+it("restores a recent association after a frontend plugin reload", () => {
+  createThreadPullCache().set("thread-one", {
+    repo: "acme/widgets",
+    number: 42,
+  });
+  expect(createThreadPullCache().get("thread-one")).toEqual({
+    repo: "acme/widgets",
+    number: 42,
+  });
+  expect(createThreadPullCache().get("thread-two")).toBeNull();
+});
+it("expires stored associations instead of keeping them indefinitely", () => {
+  const clock = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  try {
+    createThreadPullCache().set("thread-one", {
+      repo: "acme/widgets",
+      number: 42,
+    });
+    clock.mockReturnValue(1_000_000 + 5 * 60_000);
+    expect(createThreadPullCache().get("thread-one")).toBeNull();
+  } finally {
+    clock.mockRestore();
+  }
 });

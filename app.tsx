@@ -76,6 +76,7 @@ import {
 import { normalizeSlackLink } from "./slack-link.js";
 import { GitHubLogo } from "./components/github-logo.js";
 import { SlackLogo } from "./components/slack-logo.js";
+import { threadPullCache } from "./thread-pull-cache.js";
 import { ThreadPrSummary, useSummaryPosition } from "./thread-pr-summary.js";
 import type { SummaryPosition } from "./thread-summary-layout.js";
 import { EmptyState } from "./components/empty-state.js";
@@ -2689,9 +2690,7 @@ function ThreadPrOverlay() {
 
 function ThreadPrMargin({ threadId }: { threadId: string }) {
   const position = useSummaryPosition(threadId);
-  return position ? (
-    <LinkedThreadPr threadId={threadId} position={position} />
-  ) : null;
+  return <LinkedThreadPr threadId={threadId} position={position} />;
 }
 
 function LinkedThreadPr({
@@ -2699,11 +2698,13 @@ function LinkedThreadPr({
   position,
 }: {
   threadId: string;
-  position: SummaryPosition;
+  position: SummaryPosition | null;
 }) {
   const rpc = useRpc<typeof githubRpcContract>();
   const [pull, setPull] = useState<{ repo: string; number: number } | null>(
     () => {
+      const cached = threadPullCache.get(threadId);
+      if (cached) return cached;
       for (const links of Object.values(
         panelCache.links.getSnapshot().data ?? {},
       )) {
@@ -2720,11 +2721,12 @@ function LinkedThreadPr({
     const generation = ++request.current;
     void rpc.call("pullForThread", { threadId }).then(
       (result) => {
-        if (generation === request.current) setPull(result.pull);
+        if (generation === request.current) {
+          threadPullCache.set(threadId, result.pull);
+          setPull(result.pull);
+        }
       },
-      () => {
-        if (generation === request.current) setPull(null);
-      },
+      () => {}, // A failed validation must not hide a cached summary.
     );
   }, [rpc, threadId]);
   useEffect(() => {
@@ -2755,7 +2757,7 @@ function LinkedPrSummary({
 }: {
   repo: string;
   number: number;
-  position: SummaryPosition;
+  position: SummaryPosition | null;
 }) {
   const { items } = useItems("pr");
   const item = items?.find(
@@ -2774,6 +2776,7 @@ function LinkedPrSummary({
     title: `Pull request #${number}`,
     url: `https://github.com/${repo}/pull/${number}`,
   };
+  if (!position) return null;
   return (
     <ThreadPrSummary
       position={position}

@@ -29,7 +29,8 @@
     "item-notes.ts",
     "slack-link.ts",
     "thread-pr-summary.tsx",
-    "thread-summary-layout.ts"
+    "thread-summary-layout.ts",
+    "thread-pull-cache.ts"
   ],
   "engines": {
     "bb": ">=0.48.1",

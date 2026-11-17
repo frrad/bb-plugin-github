@@ -64,7 +64,9 @@ bb plugin install https://github.com/frrad/bb-plugin-github
   with autosave and conflict handling, sharing the board's saved data along with
   Slack references. Repository transfers resolve to the board's existing item
   identity. The summary uses cached board metadata without fetching full PR details
-  from GitHub; PR associations refresh in the background.
+  from GitHub. Recent thread associations persist for five minutes in this window's
+  session storage, so revisits render without waiting for background validation.
+  First visits start resolving alongside the transcript.
 - **Homepage section**: recent open issues with the same Send agent buttons.
 - **Mentions**: `@` or `#` in any composer completes GitHub issues and PRs; the
   selected item's title/body/state is attached as agent context at send time.
