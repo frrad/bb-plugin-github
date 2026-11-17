@@ -60,8 +60,11 @@ bb plugin install https://github.com/frrad/bb-plugin-github
 - **Thread PR summary**: a linked thread shows its PR title, clickable Slack
   badge, and private note in the free space to the left of the transcript.
   It appears only when at least 220 px fits with padding, without moving the
-  conversation. Narrow views and ambiguous split panes hide it. Notes and Slack
-  references share the board's saved data; PR associations refresh periodically.
+  conversation. Narrow views and ambiguous split panes hide it. Notes are editable
+  with autosave and conflict handling, sharing the board's saved data along with
+  Slack references. Repository transfers resolve to the board's existing item
+  identity. The summary uses cached board metadata without fetching full PR details
+  from GitHub; PR associations refresh in the background.
 - **Homepage section**: recent open issues with the same Send agent buttons.
 - **Mentions**: `@` or `#` in any composer completes GitHub issues and PRs; the
   selected item's title/body/state is attached as agent context at send time.

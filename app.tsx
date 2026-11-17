@@ -68,7 +68,11 @@ import {
   type TablePreferences,
 } from "./table-layout.js";
 import { panelCache, isSyncStale } from "./panel-cache.js";
-import { itemNoteKey, itemNotes, type NotesTransport } from "./item-notes.js";
+import { itemNoteKey, itemNotes } from "./item-notes.js";
+import {
+  ItemNoteEditor,
+  useNotesTransport,
+} from "./components/item-note-editor.js";
 import { normalizeSlackLink } from "./slack-link.js";
 import { GitHubLogo } from "./components/github-logo.js";
 import { SlackLogo } from "./components/slack-logo.js";
@@ -681,17 +685,6 @@ function RowMenu({ item }: { item: Item }) {
   );
 }
 
-function useNotesTransport(): NotesTransport {
-  const rpc = useRpc<typeof githubRpcContract>();
-  return useMemo(
-    () => ({
-      load: () => rpc.call("listNotes").then((result) => result.notes),
-      save: (input) => rpc.call("saveNote", input),
-    }),
-    [rpc],
-  );
-}
-
 function useSlackLinks() {
   const rpc = useRpc<typeof githubRpcContract>();
   const cache = panelCache.slackLinks;
@@ -921,7 +914,6 @@ function ItemRow({
   const [notesOpen, setNotesOpen] = useState(false);
   const notesId = useId();
   const noteKey = itemNoteKey(item.kind, item.repo, item.number);
-  const transport = useNotesTransport();
   const readNote = useCallback(() => itemNotes.getSnapshot(noteKey), [noteKey]);
   const subscribeNote = useCallback(
     (listener: () => void) => itemNotes.subscribe(noteKey, listener),
@@ -1118,91 +1110,15 @@ function ItemRow({
         >
           <div
             role="cell"
-            aria-colspan={
-              TABLE_COLUMNS.length +
-              (showSlackColumn ? 1 : 0)
-            }
+            aria-colspan={TABLE_COLUMNS.length + (showSlackColumn ? 1 : 0)}
             className="space-y-2"
           >
-            <label
-              htmlFor={notesId}
-              className="text-xs font-medium text-muted-foreground"
-            >
-              Notes
-            </label>
-            <Textarea
+            <ItemNoteEditor
+              kind={item.kind}
+              repo={item.repo}
+              number={item.number}
               id={notesId}
-              value={note.body}
-              rows={3}
-              maxLength={100_000}
-              disabled={!note.loaded}
-              onBlur={() => {
-                void itemNotes.save(noteKey, transport);
-              }}
-              aria-label={`Notes for ${item.repo}#${item.number}`}
-              placeholder="Add a note…"
-              onChange={(event) =>
-                itemNotes.edit(noteKey, event.target.value, transport)
-              }
             />
-            <p className="text-xs text-muted-foreground" role="status">
-              {note.error ??
-                (!note.loaded
-                  ? "Loading notes…"
-                  : note.saving
-                    ? "Saving…"
-                    : note.dirty
-                      ? "Unsaved changes"
-                      : "Saved on BB server")}
-            </p>
-            {note.conflict ? (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">Server version</p>
-                <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border p-2 text-sm font-sans">
-                  {note.conflict.body || "(empty)"}
-                </pre>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => itemNotes.useServer(noteKey)}
-                  >
-                    Use server version
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => itemNotes.overwrite(noteKey, transport)}
-                  >
-                    Save my version
-                  </Button>
-                </div>
-              </div>
-            ) : note.error ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  if (note.loaded && note.dirty)
-                    void itemNotes.save(noteKey, transport);
-                  else void itemNotes.refresh(transport);
-                }}
-              >
-                Retry
-              </Button>
-            ) : null}
-            {note.backup ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                A different browser note was preserved.
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => itemNotes.appendBackup(noteKey, transport)}
-                >
-                  Append browser note
-                </Button>
-              </div>
-            ) : null}
             <SlackLinkField item={item} />
           </div>
         </div>
@@ -2787,7 +2703,17 @@ function LinkedThreadPr({
 }) {
   const rpc = useRpc<typeof githubRpcContract>();
   const [pull, setPull] = useState<{ repo: string; number: number } | null>(
-    null,
+    () => {
+      for (const links of Object.values(
+        panelCache.links.getSnapshot().data ?? {},
+      )) {
+        const link = links.find(
+          (entry) => entry.kind === "pr" && entry.threadId === threadId,
+        );
+        if (link) return { repo: link.repo, number: link.number };
+      }
+      return null;
+    },
   );
   const request = useRef(0);
   const resolve = useCallback(() => {
@@ -2831,45 +2757,12 @@ function LinkedPrSummary({
   number: number;
   position: SummaryPosition;
 }) {
-  const rpc = useRpc<typeof githubRpcContract>();
   const { items } = useItems("pr");
   const item = items?.find(
     (entry) =>
       entry.repo.toLowerCase() === repo.toLowerCase() &&
       entry.number === number,
   );
-  const [fallback, setFallback] = useState<{
-    title: string;
-    url: string;
-  } | null>(null);
-  useEffect(() => {
-    if (items === null || item) return;
-    let cancelled = false;
-    // Native links can point at a PR outside the board's cached item limit.
-    void rpc.call("getPull", { repo, number }).then(
-      ({ pull }) => {
-        if (!cancelled) setFallback({ title: pull.title, url: pull.url });
-      },
-      () => {},
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [rpc, repo, number, items, item]);
-  const transport = useNotesTransport();
-  useEffect(() => {
-    void itemNotes.refresh(transport);
-  }, [transport]);
-  useRealtime("notes-changed", () => {
-    void itemNotes.refresh(transport);
-  });
-  const key = itemNoteKey("pr", repo, number);
-  const subscribe = useCallback(
-    (listener: () => void) => itemNotes.subscribe(key, listener),
-    [key],
-  );
-  const snapshot = useCallback(() => itemNotes.getSnapshot(key), [key]);
-  const note = useSyncExternalStore(subscribe, snapshot);
   const { state } = useSlackLinks();
   const slackUrl = state.data?.find(
     (entry) =>
@@ -2877,8 +2770,10 @@ function LinkedPrSummary({
       entry.repo.toLowerCase() === repo.toLowerCase() &&
       entry.number === number,
   )?.url;
-  const details = item ?? fallback;
-  if (!details) return null;
+  const details = item ?? {
+    title: `Pull request #${number}`,
+    url: `https://github.com/${repo}/pull/${number}`,
+  };
   return (
     <ThreadPrSummary
       position={position}
@@ -2887,8 +2782,14 @@ function LinkedPrSummary({
       title={details.title}
       url={details.url}
       slackUrl={slackUrl}
-      note={note.body}
-      noteStatus={note.error ?? (!note.loaded ? "Loading note…" : undefined)}
+      noteEditor={
+        <ItemNoteEditor
+          kind="pr"
+          repo={repo}
+          number={number}
+          label="Private note"
+        />
+      }
     />
   );
 }

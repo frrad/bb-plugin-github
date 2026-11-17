@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act } from "react";
-import { waitFor } from "@testing-library/dom";
+import { fireEvent, waitFor } from "@testing-library/dom";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { panelCache } from "./panel-cache.js";
 import { itemNotes } from "./item-notes.js";
@@ -48,7 +48,11 @@ afterEach(() => {
   pane.remove();
   vi.unstubAllGlobals();
 });
-function mount(threadId = "thread-one", linked = true) {
+function mount(
+  threadId = "thread-one",
+  linked = true,
+  overrides: Record<string, (input: unknown) => unknown> = {},
+) {
   const slot = renderSlot(
     app.appOverlays[0]!,
     {},
@@ -98,6 +102,7 @@ function mount(threadId = "thread-one", linked = true) {
             },
           ],
         }),
+        ...overrides,
       },
     },
   );
@@ -167,4 +172,71 @@ it("declines ambiguous split panes", async () => {
   });
   expect(slot.queryByRole("complementary")).toBeNull();
   second.remove();
+});
+
+it("edits the shared private note and saves its revision on blur", async () => {
+  const saveNote = vi.fn(() => ({
+    saved: true,
+    note: { body: "Updated private note", revision: 2 },
+  }));
+  const slot = mount("thread-one", true, { saveNote });
+  const editor = await slot.findByRole("textbox", {
+    name: "Notes for acme/widgets#42",
+  });
+  await waitFor(() =>
+    expect((editor as HTMLTextAreaElement).disabled).toBe(false),
+  );
+  fireEvent.change(editor, { target: { value: "Updated private note" } });
+  fireEvent.blur(editor);
+  await waitFor(() =>
+    expect(saveNote).toHaveBeenCalledWith({
+      kind: "pr",
+      repo: "acme/widgets",
+      number: 42,
+      body: "Updated private note",
+      revision: 1,
+      importOnly: false,
+    }),
+  );
+  await slot.findByText("Saved on BB server");
+});
+it("shows conflicts without discarding the draft", async () => {
+  const slot = mount("thread-one", true, {
+    saveNote: () => ({
+      saved: false,
+      note: { body: "Changed on another device", revision: 2 },
+    }),
+  });
+  const editor = await slot.findByRole("textbox", {
+    name: "Notes for acme/widgets#42",
+  });
+  await waitFor(() =>
+    expect((editor as HTMLTextAreaElement).disabled).toBe(false),
+  );
+  fireEvent.change(editor, { target: { value: "My draft" } });
+  fireEvent.blur(editor);
+  await slot.findByText("Changed on another device");
+  expect((editor as HTMLTextAreaElement).value).toBe("My draft");
+  expect(slot.getByRole("button", { name: "Use server version" })).toBeTruthy();
+});
+it("renders from the board's cached association without waiting for the background lookup or fetching GitHub details", async () => {
+  await panelCache.links.refresh(async () => ({
+    "pr:acme/widgets#42": [
+      {
+        kind: "pr",
+        repo: "acme/widgets",
+        number: 42,
+        threadId: "thread-one",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ],
+  }));
+  const slot = mount("thread-one", true, {
+    pullForThread: () => new Promise(() => {}),
+  });
+  await slot.findByText("Improve scheduling");
+  await slot.findByRole("textbox", { name: "Notes for acme/widgets#42" });
+  expect(
+    slot.inspection.rpcCalls.some((call) => call.method === "getPull"),
+  ).toBe(false);
 });

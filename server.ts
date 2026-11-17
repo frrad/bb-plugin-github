@@ -1250,6 +1250,19 @@ export default async function plugin(bb: BbPluginApi) {
   ] as const) {
     bb.events.on(event, invalidateThreadLinks);
   }
+  function cachedPullRepo(pull: { repo: string; number: number }): string {
+    const cached = listCachedItems({ kind: "pr" });
+    return (
+      cached.find((item) => {
+        const url = parsePullUrl(item.url);
+        return url?.number === pull.number &&
+          url.repo.toLowerCase() === pull.repo.toLowerCase();
+      })?.repo ??
+      cached.find((item) => item.repo.toLowerCase() === pull.repo.toLowerCase())?.repo ??
+      pull.repo
+    );
+  }
+
   async function scanThreadLinks(): Promise<ThreadLinkScan> {
     const threads: Awaited<ReturnType<typeof bb.sdk.threads.list>> = [];
     for (let offset = 0; ;) {
@@ -1832,7 +1845,7 @@ export default async function plugin(bb: BbPluginApi) {
           if (pull !== null) {
             return {
               pull: {
-                repo: pull.repo,
+                repo: cachedPullRepo(pull),
                 number: pull.number,
                 environmentId,
               },

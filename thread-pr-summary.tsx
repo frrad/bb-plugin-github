@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Markdown, UrlLink } from "@get-bb/plugin-sdk/app";
+import { useEffect, useState, type ReactNode } from "react";
+import { UrlLink } from "@get-bb/plugin-sdk/app";
 import { SlackLogo } from "./components/slack-logo.js";
 import {
   summaryPosition,
@@ -83,8 +83,7 @@ export function ThreadPrSummary({
   title,
   url,
   slackUrl,
-  note,
-  noteStatus,
+  noteEditor,
 }: {
   position: SummaryPosition;
   repo: string;
@@ -92,8 +91,7 @@ export function ThreadPrSummary({
   title: string;
   url: string;
   slackUrl?: string;
-  note: string;
-  noteStatus?: string;
+  noteEditor: ReactNode;
 }) {
   return (
     <aside
@@ -132,18 +130,7 @@ export function ThreadPrSummary({
       >
         {title}
       </UrlLink>
-      <div className="mt-4 border-t border-border/60 pt-3">
-        <p className="mb-2 text-xs font-medium text-muted-foreground">
-          Private note
-        </p>
-        {note ? (
-          <Markdown content={note} />
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            {noteStatus ?? "No private note yet."}
-          </p>
-        )}
-      </div>
+      <div className="mt-4 border-t border-border/60 pt-3">{noteEditor}</div>
     </aside>
   );
 }
