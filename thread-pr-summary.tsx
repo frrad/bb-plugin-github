@@ -1,5 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { UrlLink } from "@get-bb/plugin-sdk/app";
+import { UrlLink, experimental_copyToClipboard } from "@get-bb/plugin-sdk/app";
+import { toast } from "sonner";
+import { Button } from "./components/ui/button.js";
+import { Icon } from "./components/ui/icon.js";
 import { SlackLogo } from "./components/slack-logo.js";
 import {
   summaryPosition,
@@ -106,8 +109,33 @@ export function ThreadPrSummary({
       }}
     >
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>
-          {repo} #{number}
+        <span className="inline-flex min-w-0 items-center gap-1">
+          <UrlLink
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="min-w-0 hover:underline"
+          >
+            {repo} #{number}
+          </UrlLink>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-6 shrink-0 [&_[data-icon-root]]:size-3.5"
+            aria-label="Copy PR link"
+            onClick={() => {
+              void experimental_copyToClipboard({ text: url }).then(
+                (copied) => {
+                  if (copied) toast.success("Link copied");
+                  else toast.error("Could not copy the link");
+                },
+                () => toast.error("Could not copy the link"),
+              );
+            }}
+          >
+            <Icon name="Link" className="size-3.5" />
+          </Button>
         </span>
         {slackUrl ? (
           <UrlLink
