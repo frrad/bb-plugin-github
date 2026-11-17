@@ -230,3 +230,51 @@ it("uses the normal background wait after a partial repository failure", async (
   await vi.advanceTimersByTimeAsync(1);
   expect(lists()).toHaveLength(4);
 });
+
+function seedItems(
+  host: Awaited<ReturnType<typeof start>>,
+  counts: Record<string, number>,
+) {
+  const insert = host.bb.storage
+    .database()
+    .prepare(
+      "INSERT INTO items (repo, number, kind, title, state, author, labels, assignees, url, body, updated_at) VALUES (?, ?, 'issue', '', 'OPEN', '', '[]', '[]', '', '', '')",
+    );
+  for (const [repo, n] of Object.entries(counts))
+    for (let number = 1; number <= n; number++) insert.run(repo, number);
+}
+
+it("syncs repositories with the most cached items first", async () => {
+  const host = await start(4);
+  seedItems(host, { "owner/repo-1": 1, "owner/repo-2": 3 });
+  fake.calls = [];
+  await host.harness.callRpc("refresh");
+  expect(
+    lists().map((args) => args.find((arg) => arg.startsWith("name="))),
+  ).toEqual(["name=repo-2", "name=repo-1", "name=repo-0", "name=repo-3"]);
+});
+
+it("publishes a data change for each repository as it syncs", async () => {
+  fake.latency = 1000;
+  const host = await start(3);
+  await vi.advanceTimersByTimeAsync(2000);
+  seedItems(host, { "owner/repo-0": 1, "owner/repo-1": 1, "owner/repo-2": 1 });
+  const changes = () =>
+    host.harness.realtimeSignals.filter((s) => s.channel === "data-changed");
+  const before = changes().length;
+  const refresh = host.harness.callRpc("refresh");
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(changes().map((s) => s.payload)).toEqual([
+    ...changes()
+      .slice(0, before)
+      .map((s) => s.payload),
+    { repo: "owner/repo-0" },
+    { repo: "owner/repo-1" },
+  ]);
+  await vi.advanceTimersByTimeAsync(1000);
+  await refresh;
+  expect(changes()).toHaveLength(before + 3);
+  fake.latency = 0;
+  await host.harness.callRpc("refresh");
+  expect(changes()).toHaveLength(before + 3);
+});

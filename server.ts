@@ -1130,18 +1130,27 @@ export default async function plugin(bb: BbPluginApi) {
     return syncInFlight;
   }
 
+  // Sync repos with the most cached items first, so busy repos refresh early.
+  function orderReposByCachedItems(repos: RepoInfo[]): RepoInfo[] {
+    const counts = new Map(
+      (
+        db
+          .prepare("SELECT repo, count(*) AS n FROM items GROUP BY repo")
+          .all() as { repo: string; n: number }[]
+      ).map(({ repo, n }) => [repo, n]),
+    );
+    const count = (repo: string) => counts.get(repo) ?? 0;
+    return [...repos].sort((a, b) => count(b.repo) - count(a.repo));
+  }
+
   async function runSync(
     force = false,
   ): Promise<{ repos: number; items: number }> {
     await checkAuth();
-    const repos = await discoverRepos(force);
+    const repos = orderReposByCachedItems(await discoverRepos(force));
     publishProgress({ total: repos.length });
-    const before = JSON.stringify(
-      db
-        .prepare(
-          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by, commenters, review_decision FROM items ORDER BY repo, kind, number",
-        )
-        .all(),
+    const repoSnapshot = db.prepare(
+      "SELECT kind, number, updated_at, is_draft, reviewed_by, commenters, review_decision FROM items WHERE repo = ? ORDER BY kind, number",
     );
     let total = 0;
     let failed = 0;
@@ -1161,8 +1170,13 @@ export default async function plugin(bb: BbPluginApi) {
                 (args) => gh(args, undefined, "background"),
                 repo,
               );
+              const before = JSON.stringify(repoSnapshot.all(repo));
               replaceRepoRows(repo, items);
               total += items.length;
+              // Publish per repo so the board fills in as the sweep progresses.
+              if (JSON.stringify(repoSnapshot.all(repo)) !== before) {
+                bb.realtime.publish("data-changed", { repo });
+              }
             } catch (error) {
               failed += 1;
               lastFailure = errorMessage(error);
@@ -1180,19 +1194,9 @@ export default async function plugin(bb: BbPluginApi) {
         `sync failed for all ${repos.length} repo(s); last error: ${lastFailure}`,
       );
     }
-    const after = JSON.stringify(
-      db
-        .prepare(
-          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by, commenters, review_decision FROM items ORDER BY repo, kind, number",
-        )
-        .all(),
-    );
     await bb.storage.kv.set("sync-cursor", {
       lastSyncedAt: new Date().toISOString(),
     });
-    if (before !== after) {
-      bb.realtime.publish("data-changed", { items: total });
-    }
     bb.log.info(`synced ${total} item(s) across ${repos.length} repo(s)`);
     return { repos: repos.length, items: total };
   }
