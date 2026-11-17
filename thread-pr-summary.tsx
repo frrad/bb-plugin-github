@@ -79,6 +79,28 @@ export function useSummaryPosition(threadId: string): SummaryPosition | null {
   return position;
 }
 
+function GitHubPerson({ login }: { login: string }) {
+  return (
+    <UrlLink
+      href={`https://github.com/${encodeURIComponent(login)}`}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex min-w-0 items-center gap-1.5 text-foreground hover:underline"
+      title={login}
+    >
+      <img
+        src={`https://github.com/${encodeURIComponent(login)}.png?size=64`}
+        alt=""
+        loading="lazy"
+        width={20}
+        height={20}
+        className="size-5 shrink-0 rounded-full bg-muted ring-1 ring-border/60"
+      />
+      <span className="truncate">@{login}</span>
+    </UrlLink>
+  );
+}
+
 export function ThreadPrSummary({
   position,
   repo,
@@ -164,19 +186,27 @@ export function ThreadPrSummary({
       >
         {title}
       </UrlLink>
-      <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 text-xs">
-        <dt className="text-muted-foreground">Author</dt>
-        <dd>
-          {author === null ? "—" : author ? `@${author}` : "Unknown"}
+      <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 text-xs">
+        <dt className="pt-0.5 font-semibold text-foreground/80">Author</dt>
+        <dd className="flex min-h-5 min-w-0 items-center text-muted-foreground">
+          {author ? (
+            <GitHubPerson login={author} />
+          ) : author === null ? (
+            "—"
+          ) : (
+            "Unknown"
+          )}
         </dd>
-        <dt className="text-muted-foreground">
+        <dt className="pt-0.5 font-semibold text-foreground/80">
           {assignees && assignees.length > 1 ? "Assignees" : "Assignee"}
         </dt>
-        <dd>
+        <dd className="flex min-h-5 min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-muted-foreground">
           {assignees === null
             ? "—"
             : assignees.length
-              ? assignees.map((login) => `@${login}`).join(", ")
+              ? assignees.map((login) => (
+                  <GitHubPerson key={login} login={login} />
+                ))
               : "Unassigned"}
         </dd>
       </dl>
