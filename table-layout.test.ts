@@ -19,6 +19,7 @@ const first: Item = {
   kind: "pr",
   title: "Alpha",
   state: "CLOSED",
+  reviewDecision: "APPROVED",
   author: "alice",
   assignees: ["alice"],
   labels: [],
@@ -32,12 +33,13 @@ const second: Item = {
   number: 10,
   title: "Beta",
   state: "OPEN",
+  reviewDecision: "CHANGES_REQUESTED",
   assignees: ["bob"],
   updatedAt: "2026-02-01T00:00:00Z",
 };
 
 describe("table preferences", () => {
-  it.each<SortColumn>(["id", "title", "repo", "assignee", "status", "updated"])(
+  it.each<SortColumn>(["id", "title", "repo", "assignee", "status", "approval", "updated"])(
     "sorts %s in both directions without modifying cached data",
     (column) => {
       const items = [second, first];

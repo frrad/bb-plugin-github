@@ -301,8 +301,8 @@ describe("Slack reference field", () => {
     const unlinkedRow = reopened
       .getByText("A PR without a discussion")
       .closest('[role="row"]')!;
-    expect(linkedRow.querySelectorAll('[role="cell"]').length).toBe(8);
-    expect(unlinkedRow.querySelectorAll('[role="cell"]').length).toBe(8);
+    expect(linkedRow.querySelectorAll('[role="cell"]').length).toBe(9);
+    expect(unlinkedRow.querySelectorAll('[role="cell"]').length).toBe(9);
     expect(slackBadge.closest('[role="cell"]')).toBe(
       linkedRow.querySelectorAll('[role="cell"]')[2],
     );
@@ -1107,6 +1107,38 @@ describe("GitHub app navigation", () => {
     expect(diffToggle.getAttribute("aria-label")).toBe(
       "Collapse removed.ts diff",
     );
+    slot.lifecycle.unmount();
+  });
+});
+
+
+describe("approval column", () => {
+  it.each([
+    ["APPROVED", "Approved"],
+    ["CHANGES_REQUESTED", "Changes requested"],
+    ["REVIEW_REQUIRED", "Review required"],
+    [undefined, "No review decision"],
+  ])("shows an accessible indicator for %s on PRs", async (reviewDecision, label) => {
+    const slot = renderSlot(app.navPanels[0]!, { subPath: "pulls" }, {
+      rpc: {
+        listItems: () => ({ items: [{
+          repo: "acme/widgets", number: 42, kind: "pr", title: "A PR",
+          state: "OPEN", author: "octocat", assignees: [], labels: [],
+          body: "", url: "https://github.com/acme/widgets/pull/42",
+          updatedAt: "2026-01-01T00:00:00Z",
+          ...(reviewDecision === undefined ? {} : { reviewDecision }),
+        }] }),
+        listLinks: () => ({ links: {} }),
+        listSlackLinks: () => ({ links: [] }),
+        listNotes: () => ({ notes: [] }),
+        status: () => ({ ghOk: true, ghState: "ready", ghError: null,
+          repos: [{ repo: "acme/widgets", projectId: null }],
+          lastSyncedAt: new Date().toISOString() }),
+        viewer: () => ({ login: "octocat" }),
+      },
+    });
+    expect(await slot.findByRole("img", { name: label })).toBeTruthy();
+    expect(slot.getByText("Approval")).toBeTruthy();
     slot.lifecycle.unmount();
   });
 });

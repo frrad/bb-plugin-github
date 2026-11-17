@@ -47,6 +47,7 @@ const itemSchema = z
     title: z.string(),
     state: z.string(),
     isDraft: z.boolean().optional(),
+    reviewDecision: z.string().optional(),
     author: z.string(),
     labels: z.array(z.string()),
     assignees: z.array(z.string()),
@@ -523,6 +524,7 @@ const listNodeSchema = z.object({
   title: z.string(),
   state: z.enum(["OPEN", "CLOSED", "MERGED"]),
   isDraft: z.boolean().optional(),
+  reviewDecision: z.string().nullable().optional(),
   author: z.object({ login: z.string(), id: z.string().optional() }).nullable(),
   labels: z.object({ nodes: z.array(z.object({ name: z.string() })).max(100) }),
   assignees: z.object({
@@ -598,10 +600,10 @@ const repositoryListsQuery = `query RepositoryLists($owner: String!, $name: Stri
       nodes { ${listFields} }
     }
     openPrs: pullRequests(first: ${PR_PAGE}, states: [OPEN], orderBy: {field: CREATED_AT, direction: DESC}) {
-      nodes { ${listFields} isDraft ${reviewFields} }
+      nodes { ${listFields} isDraft reviewDecision ${reviewFields} }
     }
     closedPrs: pullRequests(first: ${CLOSED_PR_PAGE}, states: [CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
-      nodes { ${listFields} isDraft ${reviewFields} }
+      nodes { ${listFields} isDraft reviewDecision ${reviewFields} }
     }
   }
 }`;
@@ -759,6 +761,7 @@ async function fetchRepoItems(
       assignees: entry.assignees.nodes.map((user) => user.login),
       ...(kind === "pr"
         ? {
+            reviewDecision: entry.reviewDecision ?? "",
             reviewedBy: [
               ...new Set(
                 entry.reviews?.nodes.flatMap((review) =>
@@ -965,6 +968,7 @@ export default async function plugin(bb: BbPluginApi) {
     )`,
     `ALTER TABLE items ADD COLUMN reviewed_by TEXT NOT NULL DEFAULT '[]'`,
     `ALTER TABLE items ADD COLUMN commenters TEXT NOT NULL DEFAULT '[]'`,
+    `ALTER TABLE items ADD COLUMN review_decision TEXT NOT NULL DEFAULT ''`,
   ]);
 
   function parseStringArray(raw: unknown): string[] {
@@ -990,7 +994,10 @@ export default async function plugin(bb: BbPluginApi) {
       labels: parseStringArray(row.labels),
       assignees: parseStringArray(row.assignees),
       ...(row.kind === "pr"
-        ? { reviewedBy: parseStringArray(row.reviewed_by) }
+        ? {
+            reviewedBy: parseStringArray(row.reviewed_by),
+            reviewDecision: String(row.review_decision ?? ""),
+          }
         : {}),
       url: String(row.url),
       body: String(row.body),
@@ -1052,8 +1059,8 @@ export default async function plugin(bb: BbPluginApi) {
 
   function replaceRepoRows(repo: string, items: CachedItem[]): void {
     const insert = db.prepare(
-      `INSERT INTO items (repo, number, kind, title, state, author, labels, assignees, url, body, updated_at, is_draft, reviewed_by, commenters)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO items (repo, number, kind, title, state, author, labels, assignees, url, body, updated_at, is_draft, reviewed_by, commenters, review_decision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     db.transaction(() => {
       db.prepare("DELETE FROM items WHERE repo = ?").run(repo);
@@ -1073,6 +1080,7 @@ export default async function plugin(bb: BbPluginApi) {
           item.isDraft ? 1 : 0,
           JSON.stringify(item.reviewedBy ?? []),
           JSON.stringify(item.commenters ?? []),
+          item.reviewDecision ?? "",
         );
       }
     })();
@@ -1131,7 +1139,7 @@ export default async function plugin(bb: BbPluginApi) {
     const before = JSON.stringify(
       db
         .prepare(
-          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by, commenters FROM items ORDER BY repo, kind, number",
+          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by, commenters, review_decision FROM items ORDER BY repo, kind, number",
         )
         .all(),
     );
@@ -1175,7 +1183,7 @@ export default async function plugin(bb: BbPluginApi) {
     const after = JSON.stringify(
       db
         .prepare(
-          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by, commenters FROM items ORDER BY repo, kind, number",
+          "SELECT repo, kind, number, updated_at, is_draft, reviewed_by, commenters, review_decision FROM items ORDER BY repo, kind, number",
         )
         .all(),
     );

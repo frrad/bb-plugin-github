@@ -6,6 +6,7 @@ export const TABLE_COLUMNS = [
   "repo",
   "assignee",
   "status",
+  "approval",
   "updated",
   "actions",
 ] as const;
@@ -21,6 +22,7 @@ export const COLUMN_LABELS: Record<TableColumn, string> = {
   repo: "Repo",
   assignee: "Assignee",
   status: "Status",
+  approval: "Approval",
   updated: "Updated",
   actions: "Actions",
 };
@@ -33,6 +35,7 @@ export function defaultWidths(
     repo: 128,
     assignee: 80,
     status: 96,
+    approval: 80,
     updated: 72,
     actions: kind === "pr" ? 112 : 96,
   };
@@ -104,6 +107,8 @@ export function sortItems(
         return item.repo.split("/").pop() ?? item.repo;
       case "assignee":
         return item.assignees.join(", ");
+      case "approval":
+        return item.reviewDecision ?? "";
       case "status":
         return itemDisplayState(item);
       case "title":

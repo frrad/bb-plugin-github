@@ -1087,9 +1087,14 @@ function ItemRow({
           <span role="cell" className={`${COL.status} @[48rem]:order-5`}>
             <StatusCell item={item} />
           </span>
+          {item.kind === "pr" ? (
+            <span role="cell" className="min-w-0 @[48rem]:order-6">
+              <ApprovalCell decision={item.reviewDecision} />
+            </span>
+          ) : null}
           <span
             role="cell"
-            className={`${COL.updated} text-xs text-muted-foreground @[48rem]:order-6`}
+            className={`${COL.updated} text-xs text-muted-foreground @[48rem]:order-7`}
           >
             {relativeTime(item.updatedAt)}
           </span>
@@ -1125,7 +1130,6 @@ function ItemRow({
             role="cell"
             aria-colspan={
               TABLE_COLUMNS.length +
-              (item.kind === "issue" ? 1 : 0) +
               (showSlackColumn ? 1 : 0)
             }
             className="space-y-2"
@@ -1243,7 +1247,12 @@ function TableSkeleton({ kind }: { kind: "issue" | "pr" }) {
               <span className={`${COL.status} @[48rem]:order-5`}>
                 <Skeleton className="h-3 w-16" />
               </span>
-              <span className={`${COL.updated} @[48rem]:order-6`}>
+              {kind === "pr" ? (
+                <span className="min-w-0 @[48rem]:order-6">
+                  <Skeleton className="size-4" />
+                </span>
+              ) : null}
+              <span className={`${COL.updated} @[48rem]:order-7`}>
                 <Skeleton className="ml-auto h-3 w-12" />
               </span>
               {kind === "issue" ? (
@@ -1313,7 +1322,8 @@ function ItemsTable({
     width: number;
   } | null>(null);
   const visibleColumns = TABLE_COLUMNS.filter(
-    (column) => kind === "issue" || column !== "actions",
+    (column) =>
+      kind === "issue" ? column !== "approval" : column !== "actions",
   );
   const widths = { ...defaultWidths(kind), ...preferences?.widths, ...preview };
   for (const column of TABLE_COLUMNS)
@@ -2001,6 +2011,43 @@ function reviewStateClass(state: string): string {
   if (state === "APPROVED") return "text-green-600 dark:text-green-400";
   if (state === "CHANGES_REQUESTED") return "text-red-600 dark:text-red-400";
   return "text-muted-foreground";
+}
+
+function ApprovalCell({ decision }: { decision?: string }) {
+  const status =
+    decision === "APPROVED"
+      ? {
+          label: "Approved",
+          icon: "Check",
+          color: "text-green-600 dark:text-green-400",
+        }
+      : decision === "CHANGES_REQUESTED"
+        ? {
+            label: "Changes requested",
+            icon: "X",
+            color: "text-red-600 dark:text-red-400",
+          }
+        : decision === "REVIEW_REQUIRED"
+          ? {
+              label: "Review required",
+              icon: "Clock",
+              color: "text-yellow-600 dark:text-yellow-400",
+            }
+          : {
+              label: "No review decision",
+              icon: "Minus",
+              color: "text-muted-foreground",
+            };
+  return (
+    <span
+      role="img"
+      aria-label={status.label}
+      title={status.label}
+      className={`inline-flex items-center ${status.color}`}
+    >
+      <Icon name={status.icon} className="size-4" />
+    </span>
+  );
 }
 
 function ReviewDecisionBadge({ decision }: { decision: string }) {

@@ -411,3 +411,38 @@ it("syncs all conversation comment pages for issues and PRs and retains rows on 
     ]),
   });
 });
+
+
+it("caches GitHub review decisions and notifies when only the decision changes", async () => {
+  const repo = repository();
+  Object.assign(repo.openPrs.nodes[0], { reviewDecision: "APPROVED" });
+  Object.assign(repo.closedPrs.nodes[0], { reviewDecision: "REVIEW_REQUIRED" });
+  Object.assign(repo.closedPrs.nodes[1], { reviewDecision: null });
+  fake.responses.set("one", response(repo));
+  const { harness, bb } = await start();
+  await harness.behavior.callRpc("refresh");
+  const getPrs = async () => githubRpcContract.listItems.output.parse(
+    await harness.behavior.callRpc("listItems", { kind: "pr" }),
+  ).items;
+  const decisions = async () => Object.fromEntries(
+    (await getPrs()).map((item) => [item.number, item.reviewDecision]),
+  );
+  expect(await decisions()).toEqual({ 3: "APPROVED", 4: "REVIEW_REQUIRED", 5: "" });
+  expect(bb.storage.database().prepare(
+    "SELECT review_decision FROM items WHERE kind = 'pr' AND number = 3",
+  ).get()).toEqual({ review_decision: "APPROVED" });
+  expect(fake.calls.some((args) => args.some((arg) =>
+    arg.includes("isDraft reviewDecision"),
+  ))).toBe(true);
+  const changes = () => harness.realtimeSignals.filter(
+    (signal) => signal.channel === "data-changed",
+  ).length;
+  const before = changes();
+  Object.assign(repo.openPrs.nodes[0], { reviewDecision: "CHANGES_REQUESTED" });
+  fake.responses.set("one", response(repo));
+  await harness.behavior.callRpc("refresh");
+  expect((await decisions())[3]).toBe("CHANGES_REQUESTED");
+  expect(changes()).toBe(before + 1);
+  await harness.behavior.callRpc("refresh");
+  expect(changes()).toBe(before + 1);
+});

@@ -24,6 +24,9 @@ bb plugin install https://github.com/frrad/bb-plugin-github
   The Status column shows draft PRs in gray; published PRs show Open, while merged
   and closed PRs retain those statuses. Drafts still match `is:open` searches.
   Click a column header to cycle ascending, descending, and original order.
+  PR tables include an Approval column: a green check for approved, a red X
+  for changes requested, a clock for review required, and a dash when GitHub
+  reports no decision. Hover an icon for its label.
   Drag the divider at a header's right edge to resize that column; double-click
   it to reset its width. Focus a divider and use the arrow keys to resize with
   the keyboard. Sorting and widths are saved separately for each search.
