@@ -977,7 +977,7 @@ describe("GitHub app navigation", () => {
     slot.lifecycle.unmount();
   });
 
-  it("opens issue details in the URL-backed page instead of a fixed tab", async () => {
+  it("keeps the list in place when an issue row is clicked", async () => {
     const panel = app.navPanels[0]!;
     expect(panel.fixedTabs).toBeUndefined();
 
@@ -1017,11 +1017,7 @@ describe("GitHub app navigation", () => {
     );
 
     (await slot.findByText("Route-backed issue")).click();
-    expect(slot.navigateCalls).toContainEqual({
-      method: "toPluginPanel",
-      path: "github-fred",
-      options: { subPath: "issues/get-bb/bb/42" },
-    });
+    expect(slot.navigateCalls).toEqual([]);
     slot.lifecycle.unmount();
   });
 

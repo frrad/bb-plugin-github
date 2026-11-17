@@ -13,45 +13,17 @@ export function itemDisplayState(
     : item.state;
 }
 
-export type Route =
-  | { view: "issues" }
-  | { view: "pulls" }
-  | { view: "new" }
-  | { view: "issue"; repo: string; number: number }
-  | { view: "pull"; repo: string; number: number };
+export type Route = { view: "issues" } | { view: "pulls" } | { view: "new" };
 
 export function parseSubPath(subPath: string): Route {
-  const parts = subPath.split("/").filter((part) => part.length > 0);
-  if (parts[0] === "pulls" && parts.length === 4) {
-    const number = Number(parts[3]);
-    if (Number.isFinite(number)) {
-      return { view: "pull", repo: `${parts[1]}/${parts[2]}`, number };
-    }
-  }
-  if (parts[0] === "pulls") return { view: "pulls" };
-  if (parts[0] === "new") return { view: "new" };
-  if (parts[0] === "issues" && parts.length === 4) {
-    const number = Number(parts[3]);
-    if (Number.isFinite(number)) {
-      return { view: "issue", repo: `${parts[1]}/${parts[2]}`, number };
-    }
-  }
+  const first = subPath.split("/").find((part) => part.length > 0);
+  if (first === "pulls") return { view: "pulls" };
+  if (first === "new") return { view: "new" };
   return { view: "issues" };
 }
 
 export function routeToSubPath(route: Route): string {
-  switch (route.view) {
-    case "issues":
-      return "issues";
-    case "pulls":
-      return "pulls";
-    case "new":
-      return "new";
-    case "issue":
-      return `issues/${route.repo}/${route.number}`;
-    case "pull":
-      return `pulls/${route.repo}/${route.number}`;
-  }
+  return route.view;
 }
 
 interface QueryFilters {

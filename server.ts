@@ -234,14 +234,6 @@ export const githubRpcContract = defineRpcContract({
     input: z.null(),
     output: z.object({ login: z.string().min(1) }).strict(),
   },
-  assignableUsers: {
-    input: z.object({ repo: repoNameSchema }).strict(),
-    output: z.object({ users: z.array(z.string().min(1)) }).strict(),
-  },
-  repositoryLabels: {
-    input: z.object({ repo: repoNameSchema }).strict(),
-    output: z.object({ labels: z.array(z.string().min(1)) }).strict(),
-  },
   setIssueState: {
     input: itemInputSchema
       .extend({ state: z.enum(["open", "closed"]) })
@@ -254,34 +246,6 @@ export const githubRpcContract = defineRpcContract({
       .strict(),
     output: z
       .object({ ok: z.literal(true), assignees: z.array(z.string().min(1)) })
-      .strict(),
-  },
-  setLabels: {
-    input: itemInputSchema.extend({ labels: z.array(z.string()) }).strict(),
-    output: z
-      .object({ ok: z.literal(true), labels: z.array(z.string().min(1)) })
-      .strict(),
-  },
-  getIssue: {
-    input: itemInputSchema,
-    output: z
-      .object({
-        issue: z
-          .object({
-            repo: repoNameSchema,
-            number: itemNumberSchema,
-            title: z.string(),
-            state: z.string(),
-            author: z.string(),
-            body: z.string(),
-            labels: z.array(z.string()),
-            assignees: z.array(z.string()),
-            url: z.string(),
-            updatedAt: z.string(),
-            comments: z.array(commentSchema),
-          })
-          .strict(),
-      })
       .strict(),
   },
   getPull: {
@@ -306,10 +270,6 @@ export const githubRpcContract = defineRpcContract({
           .nullable(),
       })
       .strict(),
-  },
-  commentIssue: {
-    input: itemInputSchema.extend({ body: nonBlankStringSchema }).strict(),
-    output: okResultSchema,
   },
   createIssue: {
     input: z
@@ -1089,7 +1049,7 @@ export default async function plugin(bb: BbPluginApi) {
   function patchCachedItem(
     repo: string,
     number: number,
-    patch: { state?: string; assignees?: string[]; labels?: string[] },
+    patch: { state?: string; assignees?: string[] },
   ): void {
     if (patch.state !== undefined) {
       db.prepare(
@@ -1100,11 +1060,6 @@ export default async function plugin(bb: BbPluginApi) {
       db.prepare(
         "UPDATE items SET assignees = ? WHERE repo = ? AND kind = 'issue' AND number = ?",
       ).run(JSON.stringify(patch.assignees), repo, number);
-    }
-    if (patch.labels !== undefined) {
-      db.prepare(
-        "UPDATE items SET labels = ? WHERE repo = ? AND kind = 'issue' AND number = ?",
-      ).run(JSON.stringify(patch.labels), repo, number);
     }
     bb.realtime.publish("data-changed", {});
   }
@@ -1500,48 +1455,6 @@ export default async function plugin(bb: BbPluginApi) {
     return login;
   }
 
-  const assignableCache = new Map<
-    string,
-    { users: string[]; fetchedAt: number }
-  >();
-  const labelsCache = new Map<
-    string,
-    { labels: string[]; fetchedAt: number }
-  >();
-
-  async function getAssignableUsers(repo: string): Promise<string[]> {
-    const cached = assignableCache.get(repo);
-    if (cached !== undefined && Date.now() - cached.fetchedAt < 10 * 60_000) {
-      return cached.users;
-    }
-    const raw = await gh(
-      ["api", `repos/${repo}/assignees?per_page=100`],
-      15_000,
-    );
-    const entries = JSON.parse(raw) as Array<{ login?: unknown }>;
-    const users = entries
-      .map((entry) => String(entry?.login ?? ""))
-      .filter((login) => login.length > 0)
-      .sort((a, b) => a.localeCompare(b));
-    assignableCache.set(repo, { users, fetchedAt: Date.now() });
-    return users;
-  }
-
-  async function getRepoLabels(repo: string): Promise<string[]> {
-    const cached = labelsCache.get(repo);
-    if (cached !== undefined && Date.now() - cached.fetchedAt < 10 * 60_000) {
-      return cached.labels;
-    }
-    const raw = await gh(["api", `repos/${repo}/labels?per_page=100`], 15_000);
-    const entries = JSON.parse(raw) as Array<{ name?: unknown }>;
-    const labels = entries
-      .map((entry) => String(entry?.name ?? "").trim())
-      .filter((name) => name.length > 0)
-      .sort((a, b) => a.localeCompare(b));
-    labelsCache.set(repo, { labels, fetchedAt: Date.now() });
-    return labels;
-  }
-
   bb.rpc.register(githubRpcContract, {
     async listSlackLinks() {
       return githubRpcContract.listSlackLinks.output.parse({
@@ -1649,14 +1562,6 @@ export default async function plugin(bb: BbPluginApi) {
       return { login: await getViewer() };
     },
 
-    async assignableUsers(input) {
-      return { users: await getAssignableUsers(input.repo) };
-    },
-
-    async repositoryLabels(input) {
-      return { labels: await getRepoLabels(input.repo) };
-    },
-
     async setIssueState({ repo, number, state }): Promise<{ ok: true }> {
       await gh([
         "issue",
@@ -1688,78 +1593,6 @@ export default async function plugin(bb: BbPluginApi) {
       await gh(args);
       patchCachedItem(repo, number, { assignees: next });
       return { ok: true, assignees: next };
-    },
-
-    async setLabels({
-      repo,
-      number,
-      labels,
-    }): Promise<{ ok: true; labels: string[] }> {
-      const next = [
-        ...new Set(labels.map((label) => label.trim()).filter(Boolean)),
-      ];
-      const currentRaw = await gh(
-        ["issue", "view", String(number), "-R", repo, "--json", "labels"],
-        15_000,
-      );
-      const currentDetail = JSON.parse(currentRaw) as {
-        labels?: Array<{ name?: unknown }>;
-      };
-      const current = (currentDetail.labels ?? [])
-        .map((label) => String(label?.name ?? "").trim())
-        .filter((label) => label.length > 0);
-      const add = next.filter((label) => !current.includes(label));
-      const remove = current.filter((label) => !next.includes(label));
-      if (add.length === 0 && remove.length === 0)
-        return { ok: true, labels: next };
-      const args = ["issue", "edit", String(number), "-R", repo];
-      for (const label of add) args.push("--add-label", label);
-      for (const label of remove) args.push("--remove-label", label);
-      await gh(args);
-      patchCachedItem(repo, number, { labels: next });
-      return { ok: true, labels: next };
-    },
-
-    async getIssue({ repo, number }) {
-      const raw = await gh([
-        "issue",
-        "view",
-        String(number),
-        "-R",
-        repo,
-        "--json",
-        "number,title,body,state,author,createdAt,updatedAt,labels,assignees,url,comments",
-      ]);
-      const detail = JSON.parse(raw) as {
-        comments?: Array<{
-          author?: { login?: unknown };
-          body?: unknown;
-          createdAt?: unknown;
-        }>;
-      } & GhListEntry;
-      return {
-        issue: {
-          repo,
-          number,
-          title: String(detail.title ?? ""),
-          state: String(detail.state ?? ""),
-          author: String(detail.author?.login ?? ""),
-          body: typeof detail.body === "string" ? detail.body : "",
-          labels: (detail.labels ?? []).map((label) =>
-            String(label?.name ?? ""),
-          ),
-          assignees: (detail.assignees ?? []).map((user) =>
-            String(user?.login ?? ""),
-          ),
-          url: String(detail.url ?? ""),
-          updatedAt: String(detail.updatedAt ?? ""),
-          comments: (detail.comments ?? []).map((comment) => ({
-            author: String(comment.author?.login ?? ""),
-            body: typeof comment.body === "string" ? comment.body : "",
-            createdAt: String(comment.createdAt ?? ""),
-          })),
-        },
-      };
     },
 
     async getPull({ repo, number }) {
@@ -2022,19 +1855,6 @@ export default async function plugin(bb: BbPluginApi) {
         }
       }
       return { pull: null };
-    },
-
-    async commentIssue({ repo, number, body }): Promise<{ ok: true }> {
-      await gh([
-        "issue",
-        "comment",
-        String(number),
-        "-R",
-        repo,
-        "--body",
-        body,
-      ]);
-      return { ok: true };
     },
 
     async createIssue(input) {

@@ -19,8 +19,9 @@ bb plugin install https://github.com/frrad/bb-plugin-github
   Use **Add search**, edit its name, collapse it with the chevron, reorder it with
   the up/down arrows, or remove it with the trash button. Names, filters, search
   types, order, and collapsed state are remembered in this browser. Your
-  previous single search becomes the first section automatically. Direct issue
-  and PR links still open their details. Issue searches include a New issue form.
+  previous single search becomes the first section automatically. Clicking a row
+  does not open a detail view; use the row's GitHub link. Issue searches include
+  a New issue form.
   The Status column shows draft PRs in gray; published PRs show Open, while merged
   and closed PRs retain those statuses. Drafts still match `is:open` searches.
   Click a column header to cycle ascending, descending, and original order.
@@ -47,9 +48,6 @@ bb plugin install https://github.com/frrad/bb-plugin-github
   Save a message permalink, open it in Slack, or remove it. Links are saved on
   the BB server and available across devices. This link-only feature requires no
   Slack token and does not load message contents inline.
-- **Issue detail**: markdown body, comments, comment box, status,
-  assignee, and label editing, plus "Send agent".
-  Deep-linkable via the URL hash: `#/issues/<owner>/<repo>/<number>`.
 - **Send agent / Review with agent**: spawns a BB worker thread on the issue
   (or a review thread on the PR) in the repo's BB project. The issue/PR then
   shows a ⚡ pill linking to the thread. PR rows also discover existing visible,

@@ -184,9 +184,6 @@ const exact = {
   "--version": "gh version 2.96.0 (fake)",
   "auth status --hostname github.com --active": "authenticated",
   "api user": '{"login":"octocat"}',
-  "api repos/acme/widgets/assignees?per_page=100": '[{"login":"zoe"},{"login":"alice"},{"login":""}]',
-  "api repos/acme/widgets/labels?per_page=100": '[{"name":"triage"},{"name":" bug "},{"name":""}]',
-  "issue view 7 -R acme/widgets --json labels": '{"labels":[{"name":"bug"},{"name":"old"}]}',
   "api --paginate --slurp repos/acme/widgets/pulls/42/comments?per_page=100": ${JSON.stringify(reviewComments)},
   "api --paginate --slurp repos/acme/widgets/pulls/42/files?per_page=100": ${JSON.stringify(pullFiles)},
 };
@@ -372,18 +369,10 @@ describe("github plugin RPC behavior", () => {
       ok: true,
       assignees: ["octocat", "hubot"],
     });
-    await expect(
-      harness.callRpc("setLabels", {
-        repo: "acme/widgets",
-        number: 7,
-        labels: ["bug", "feature", "feature", " "],
-      }),
-    ).resolves.toEqual({ ok: true, labels: ["bug", "feature"] });
 
     expect(ghCalls()).toEqual(
       expect.arrayContaining([
         "issue edit 7 -R acme/widgets --add-assignee hubot",
-        "issue edit 7 -R acme/widgets --add-label feature --remove-label old",
       ]),
     );
     await expect(
@@ -392,7 +381,7 @@ describe("github plugin RPC behavior", () => {
       items: [
         {
           number: 7,
-          labels: ["bug", "feature"],
+          labels: ["bug", "old"],
           assignees: ["octocat", "hubot"],
         },
       ],
@@ -432,7 +421,7 @@ describe("github plugin RPC behavior", () => {
       harness.realtimeSignals.filter(
         (signal) => signal.channel === "data-changed",
       ),
-    ).toHaveLength(3);
+    ).toHaveLength(2);
   });
 
   it("normalizes draft state, checks, review threads, and paginated files", async () => {

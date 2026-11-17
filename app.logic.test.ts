@@ -25,13 +25,11 @@ const issue: Item = {
 };
 
 describe("github panel routes", () => {
-  it("round-trips list, create, issue, and pull routes", () => {
+  it("round-trips list and create routes", () => {
     const routes: Route[] = [
       { view: "issues" },
       { view: "pulls" },
       { view: "new" },
-      { view: "issue", repo: "acme/widgets", number: 7 },
-      { view: "pull", repo: "get-bb/bb", number: 42 },
     ];
 
     for (const route of routes) {
@@ -39,16 +37,9 @@ describe("github panel routes", () => {
     }
   });
 
-  it("falls back to the owning list for malformed detail paths", () => {
-    expect(parseSubPath("pulls/acme/widgets/not-a-number")).toEqual({
-      view: "pulls",
-    });
-    expect(parseSubPath("issues/acme/widgets/not-a-number")).toEqual({
-      view: "issues",
-    });
-    expect(parseSubPath("issues/acme/widgets/7/extra")).toEqual({
-      view: "issues",
-    });
+  it("maps old detail paths to the owning list", () => {
+    expect(parseSubPath("pulls/acme/widgets/42")).toEqual({ view: "pulls" });
+    expect(parseSubPath("issues/acme/widgets/7")).toEqual({ view: "issues" });
     expect(parseSubPath("")).toEqual({ view: "issues" });
   });
 });

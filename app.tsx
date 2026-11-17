@@ -43,9 +43,7 @@ import { DelayedLoading } from "@/components/ui/delayed-loading";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuCheckboxItem,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -82,9 +80,6 @@ import {
   type SavedSearch,
 } from "./saved-searches.js";
 
-type IssueDetail = PluginRpcResult<
-  (typeof githubRpcContract)["getIssue"]
->["issue"];
 type PullDetail = PluginRpcResult<
   (typeof githubRpcContract)["getPull"]
 >["pull"];
@@ -370,12 +365,7 @@ function useIssueMutations() {
       rpc.call("setAssignees", { repo, number, assignees }),
     [rpc],
   );
-  const setLabels = useCallback(
-    (repo: string, number: number, labels: string[]) =>
-      rpc.call("setLabels", { repo, number, labels }),
-    [rpc],
-  );
-  return { setIssueState, setAssignees, setLabels };
+  return { setIssueState, setAssignees };
 }
 
 function FilterSuggestionIcon({ icon }: { icon: SuggestionIcon }) {
@@ -917,13 +907,11 @@ function ItemRow({
   links,
   slackUrl,
   showSlackColumn,
-  onOpen,
 }: {
   item: Item;
   links: ThreadLink[] | undefined;
   slackUrl?: string;
   showSlackColumn: boolean;
-  onOpen: () => void;
 }) {
   const { spawn, spawningKey } = useSpawn();
   const busy = spawningKey === `${item.repo}#${item.number}`;
@@ -941,8 +929,7 @@ function ItemRow({
     <div role="rowgroup">
       <div
         role="row"
-        className="grid cursor-pointer grid-cols-1 gap-y-2 px-3 py-3 hover:bg-accent/50 @[48rem]:grid @[48rem]:grid-cols-[var(--table-columns)] @[48rem]:items-center @[48rem]:gap-3 @[48rem]:py-2"
-        onClick={onOpen}
+        className="grid grid-cols-1 gap-y-2 px-3 py-3 hover:bg-accent/50 @[48rem]:grid @[48rem]:grid-cols-[var(--table-columns)] @[48rem]:items-center @[48rem]:gap-3 @[48rem]:py-2"
       >
         <span
           role="cell"
@@ -1285,7 +1272,6 @@ function ItemsTable({
   items,
   error,
   hasFilter,
-  onOpenItem,
   preferences,
   onPreferencesChange,
 }: {
@@ -1293,7 +1279,6 @@ function ItemsTable({
   items: Item[] | null;
   error: string | null;
   hasFilter: boolean;
-  onOpenItem: (repo: string, number: number) => void;
   preferences?: TablePreferences;
   onPreferencesChange: (preferences: TablePreferences) => void;
 }) {
@@ -1391,7 +1376,6 @@ function ItemsTable({
             slackUrl={slackLinks.get(
               itemNoteKey(item.kind, item.repo, item.number),
             )}
-            onOpen={() => onOpenItem(item.repo, item.number)}
           />
         ))}
       </div>
@@ -1564,420 +1548,6 @@ function SidebarHeading({ children }: { children: React.ReactNode }) {
     <h3 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
       {children}
     </h3>
-  );
-}
-
-function AssigneePicker({
-  repo,
-  assignees,
-  onToggle,
-}: {
-  repo: string;
-  assignees: string[];
-  onToggle: (login: string, assigned: boolean) => void;
-}) {
-  const rpc = useRpc<typeof githubRpcContract>();
-  const viewer = useViewer();
-  const [users, setUsers] = useState<string[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    if (users !== null) return;
-    rpc.call("assignableUsers", { repo }).then(
-      (result) => setUsers(result.users),
-      (error: unknown) => setLoadError(errorText(error)),
-    );
-  }, [rpc, repo, users]);
-
-  const ordered =
-    users === null
-      ? null
-      : [...users].sort((a, b) => Number(b === viewer) - Number(a === viewer));
-
-  return (
-    <DropdownMenu onOpenChange={(open) => open && load()}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 text-xs text-muted-foreground"
-        >
-          Edit
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="max-h-72 w-56 overflow-y-auto"
-      >
-        <DropdownMenuLabel>Assignees</DropdownMenuLabel>
-        {loadError !== null ? (
-          <DropdownMenuItem disabled>{loadError}</DropdownMenuItem>
-        ) : ordered === null ? (
-          <DropdownMenuItem disabled>Loading…</DropdownMenuItem>
-        ) : ordered.length === 0 ? (
-          <DropdownMenuItem disabled>No assignable users</DropdownMenuItem>
-        ) : (
-          ordered.map((login) => (
-            <DropdownMenuCheckboxItem
-              key={login}
-              checked={assignees.includes(login)}
-              onCheckedChange={(checked) => onToggle(login, checked)}
-              onSelect={(event) => event.preventDefault()}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <Avatar login={login} size="size-4" />
-                <span className="truncate">
-                  {login}
-                  {login === viewer ? " (you)" : ""}
-                </span>
-              </span>
-            </DropdownMenuCheckboxItem>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function LabelPicker({
-  repo,
-  labels,
-  onToggle,
-}: {
-  repo: string;
-  labels: string[];
-  onToggle: (label: string, enabled: boolean) => void;
-}) {
-  const rpc = useRpc<typeof githubRpcContract>();
-  const [available, setAvailable] = useState<string[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    if (available !== null) return;
-    rpc.call("repositoryLabels", { repo }).then(
-      (result) => setAvailable(result.labels),
-      (error: unknown) => setLoadError(errorText(error)),
-    );
-  }, [rpc, repo, available]);
-
-  const ordered =
-    available === null
-      ? null
-      : [...new Set([...labels, ...available])].sort((a, b) =>
-          a.localeCompare(b),
-        );
-
-  return (
-    <DropdownMenu onOpenChange={(open) => open && load()}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 text-xs text-muted-foreground"
-        >
-          Edit
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="max-h-72 w-56 overflow-y-auto"
-      >
-        <DropdownMenuLabel>Labels</DropdownMenuLabel>
-        {loadError !== null ? (
-          <DropdownMenuItem disabled>{loadError}</DropdownMenuItem>
-        ) : ordered === null ? (
-          <DropdownMenuItem disabled>Loading…</DropdownMenuItem>
-        ) : ordered.length === 0 ? (
-          <DropdownMenuItem disabled>No labels in repo</DropdownMenuItem>
-        ) : (
-          ordered.map((label) => (
-            <DropdownMenuCheckboxItem
-              key={label}
-              checked={labels.includes(label)}
-              onCheckedChange={(checked) => onToggle(label, checked === true)}
-              onSelect={(event) => event.preventDefault()}
-            >
-              <span className="min-w-0 truncate">{label}</span>
-            </DropdownMenuCheckboxItem>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function IssueDetailView({
-  repo,
-  number,
-  onBack,
-}: {
-  repo: string;
-  number: number;
-  onBack: () => void;
-}) {
-  const rpc = useRpc<typeof githubRpcContract>();
-  const links = useLinks();
-  const { spawn, spawningKey } = useSpawn();
-  const { setIssueState, setAssignees, setLabels } = useIssueMutations();
-  const [detail, setDetail] = useState<IssueDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [comment, setComment] = useState("");
-  const [posting, setPosting] = useState(false);
-
-  const load = useCallback(() => {
-    rpc.call("getIssue", { repo, number }).then(
-      (result) => {
-        setDetail(result.issue);
-        setError(null);
-      },
-      (err: unknown) => setError(errorText(err)),
-    );
-  }, [rpc, repo, number]);
-  useEffect(() => {
-    setDetail(null);
-    load();
-  }, [load]);
-
-  const changeState = useCallback(
-    (next: "open" | "closed") => {
-      setDetail((prev) =>
-        prev === null
-          ? prev
-          : { ...prev, state: next === "closed" ? "CLOSED" : "OPEN" },
-      );
-      setIssueState(repo, number, next).catch((err: unknown) => {
-        toast.error(errorText(err));
-        load();
-      });
-    },
-    [setIssueState, repo, number, load],
-  );
-
-  const toggleAssignee = useCallback(
-    (login: string, assigned: boolean) => {
-      let next: string[] = [];
-      setDetail((prev) => {
-        if (prev === null) return prev;
-        next = assigned
-          ? [...new Set([...prev.assignees, login])]
-          : prev.assignees.filter((entry) => entry !== login);
-        return { ...prev, assignees: next };
-      });
-      setAssignees(repo, number, next).catch((err: unknown) => {
-        toast.error(errorText(err));
-        load();
-      });
-    },
-    [setAssignees, repo, number, load],
-  );
-
-  const toggleLabel = useCallback(
-    (label: string, enabled: boolean) => {
-      let next: string[] = [];
-      setDetail((prev) => {
-        if (prev === null) return prev;
-        next = enabled
-          ? [...new Set([...prev.labels, label])]
-          : prev.labels.filter((entry) => entry !== label);
-        return { ...prev, labels: next };
-      });
-      setLabels(repo, number, next).catch((err: unknown) => {
-        toast.error(errorText(err));
-        load();
-      });
-    },
-    [setLabels, repo, number, load],
-  );
-
-  const postComment = useCallback(() => {
-    if (comment.trim().length === 0) return;
-    setPosting(true);
-    rpc
-      .call("commentIssue", { repo, number, body: comment })
-      .then(() => {
-        setComment("");
-        load();
-      })
-      .catch((err: unknown) => toast.error(errorText(err)))
-      .finally(() => setPosting(false));
-  }, [rpc, repo, number, comment, load]);
-
-  if (error !== null) return <EmptyState message={error} />;
-  if (detail === null) {
-    return <DetailSkeleton />;
-  }
-
-  const issueLinks = links[`issue:${repo}#${number}`];
-  return (
-    <div className="@container/github-detail flex flex-col gap-4">
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-        <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onBack}>
-          ← Issues
-        </Button>
-        <span>
-          {repo} · #{number}
-        </span>
-        <span className="flex-1" />
-        <UrlLink href={detail.url} className="underline hover:text-foreground">
-          Open on GitHub ↗
-        </UrlLink>
-      </div>
-
-      <div className="flex items-start gap-3">
-        <h2 className="min-w-0 flex-1 text-xl font-semibold text-foreground">
-          {detail.title}{" "}
-          <span className="font-normal text-muted-foreground">
-            #{detail.number}
-          </span>
-        </h2>
-        <Button
-          size="sm"
-          disabled={spawningKey !== null}
-          onClick={() => spawn("startWork", repo, number)}
-        >
-          {spawningKey !== null ? "Starting…" : "Send agent"}
-        </Button>
-      </div>
-
-      <div className="flex flex-col gap-6 @min-[56rem]/github-detail:flex-row">
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <div className="overflow-hidden rounded-lg border border-border bg-card">
-            <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
-              <Avatar login={detail.author} />
-              <span className="font-medium text-foreground">
-                {detail.author}
-              </span>
-              opened this issue · updated {relativeTime(detail.updatedAt)}
-            </div>
-            <div className="p-4">
-              {detail.body.length > 0 ? (
-                <Markdown content={detail.body} className="text-sm" />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  (no description)
-                </p>
-              )}
-            </div>
-          </div>
-
-          {detail.comments.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              <h3 className="text-xs font-semibold text-muted-foreground">
-                Activity · {detail.comments.length}
-              </h3>
-              {detail.comments.map((entry, index) => (
-                <div
-                  key={index}
-                  className="rounded-lg border border-border bg-card p-3"
-                >
-                  <p className="mb-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-                    <Avatar login={entry.author} />
-                    <span className="font-medium text-foreground">
-                      {entry.author}
-                    </span>{" "}
-                    · {relativeTime(entry.createdAt)}
-                  </p>
-                  <Markdown content={entry.body} className="text-sm" />
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="flex flex-col gap-2">
-            <Textarea
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder="Leave a comment…"
-              rows={3}
-            />
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                disabled={posting || comment.trim().length === 0}
-                onClick={postComment}
-              >
-                {posting ? "Posting…" : "Comment"}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <aside className="flex w-full shrink-0 flex-col gap-5 @min-[56rem]/github-detail:w-56">
-          <div className="flex flex-col gap-2">
-            <SidebarHeading>Status</SidebarHeading>
-            <Select
-              value={detail.state === "OPEN" ? "open" : "closed"}
-              onValueChange={(value) =>
-                changeState(value === "closed" ? "closed" : "open")
-              }
-            >
-              <SelectTrigger className="h-8 w-full text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="open">
-                  <span className="flex items-center gap-2">
-                    <StateDot kind="issue" state="OPEN" /> Open
-                  </span>
-                </SelectItem>
-                <SelectItem value="closed">
-                  <span className="flex items-center gap-2">
-                    <StateDot kind="issue" state="CLOSED" /> Closed
-                  </span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <SidebarHeading>Assignees</SidebarHeading>
-              <AssigneePicker
-                repo={repo}
-                assignees={detail.assignees}
-                onToggle={toggleAssignee}
-              />
-            </div>
-            {detail.assignees.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No one assigned</p>
-            ) : (
-              detail.assignees.map((login) => (
-                <p
-                  key={login}
-                  className="flex items-center gap-2 text-sm text-foreground"
-                >
-                  <Avatar login={login} />
-                  <span className="truncate">{login}</span>
-                </p>
-              ))
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <SidebarHeading>Labels</SidebarHeading>
-              <LabelPicker
-                repo={repo}
-                labels={detail.labels}
-                onToggle={toggleLabel}
-              />
-            </div>
-            {detail.labels.length === 0 ? (
-              <p className="text-sm text-muted-foreground">None yet</p>
-            ) : (
-              <LabelChips labels={detail.labels} className="flex flex-wrap" />
-            )}
-          </div>
-
-          {issueLinks !== undefined && issueLinks.length > 0 ? (
-            <div className="flex flex-col gap-1.5">
-              <SidebarHeading>Agents</SidebarHeading>
-              <ThreadPills links={issueLinks} />
-            </div>
-          ) : null}
-        </aside>
-      </div>
-    </div>
   );
 }
 
@@ -2686,7 +2256,7 @@ function NewIssueForm({
   onCancel,
 }: {
   repos: RepoInfo[];
-  onCreated: (repo: string, number: number | null) => void;
+  onCreated: () => void;
   onCancel: () => void;
 }) {
   const rpc = useRpc<typeof githubRpcContract>();
@@ -2699,9 +2269,9 @@ function NewIssueForm({
     setCreating(true);
     rpc
       .call("createIssue", { repo, title, body })
-      .then((result) => {
+      .then(() => {
         toast.success("Issue created");
-        onCreated(repo, result.number);
+        onCreated();
       })
       .catch((err: unknown) => toast.error(errorText(err)))
       .finally(() => setCreating(false));
@@ -2974,16 +2544,6 @@ function GithubPanelBody({
   searches: SavedSearch[];
   setSearches: React.Dispatch<React.SetStateAction<SavedSearch[]>>;
 }) {
-  const openItem = useCallback(
-    (itemKind: "issue" | "pr", repo: string, number: number) => {
-      navigate(
-        itemKind === "pr"
-          ? { view: "pull", repo, number }
-          : { view: "issue", repo, number },
-      );
-    },
-    [navigate],
-  );
   if (status !== null && status.ghState === "unavailable") {
     return (
       <EmptyState
@@ -3004,35 +2564,11 @@ function GithubPanelBody({
     );
   }
 
-  if (route.view === "issue") {
-    return (
-      <IssueDetailView
-        repo={route.repo}
-        number={route.number}
-        onBack={() => navigate({ view: "issues" })}
-      />
-    );
-  }
-  if (route.view === "pull") {
-    return (
-      <PullDetailView
-        repo={route.repo}
-        number={route.number}
-        onBack={() => navigate({ view: "pulls" })}
-      />
-    );
-  }
   if (route.view === "new") {
     return (
       <NewIssueForm
         repos={status?.repos ?? []}
-        onCreated={(repo, number) =>
-          navigate(
-            number !== null
-              ? { view: "issue", repo, number }
-              : { view: "issues" },
-          )
-        }
+        onCreated={() => navigate({ view: "issues" })}
         onCancel={() => navigate({ view: "issues" })}
       />
     );
@@ -3062,7 +2598,6 @@ function GithubPanelBody({
               current.filter((entry) => entry.id !== search.id),
             )
           }
-          onOpenItem={(repo, number) => openItem(search.kind, repo, number)}
           onNewIssue={() => navigate({ view: "new" })}
         />
       ))}
@@ -3099,7 +2634,6 @@ function SearchSection({
   onChange,
   onMove,
   onRemove,
-  onOpenItem,
   onNewIssue,
 }: {
   search: SavedSearch;
@@ -3109,7 +2643,6 @@ function SearchSection({
   onChange: (patch: Partial<SavedSearch>) => void;
   onMove: (offset: -1 | 1) => void;
   onRemove: () => void;
-  onOpenItem: (repo: string, number: number) => void;
   onNewIssue: () => void;
 }) {
   const { items, error } = useItems(search.kind);
@@ -3222,7 +2755,6 @@ function SearchSection({
           hasFilter={search.query.trim().length > 0}
           preferences={search.table}
           onPreferencesChange={(table) => onChange({ table })}
-          onOpenItem={onOpenItem}
         />
       </div>
     </section>
