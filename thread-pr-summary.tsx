@@ -108,15 +108,17 @@ export function ThreadPrSummary({
         overflowWrap: "anywhere",
       }}
     >
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="inline-flex min-w-0 items-center gap-1">
+      <div className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="inline-flex min-w-0 flex-1 items-center gap-1">
           <UrlLink
             href={url}
             target="_blank"
             rel="noreferrer"
-            className="min-w-0 hover:underline"
+            className="flex min-w-0 flex-1 items-center gap-1 hover:underline"
+            title={`${repo} #${number}`}
           >
-            {repo} #{number}
+            <span className="truncate">{repo}</span>
+            <span className="shrink-0">#{number}</span>
           </UrlLink>
           <Button
             type="button"
@@ -144,9 +146,9 @@ export function ThreadPrSummary({
             rel="noreferrer"
             aria-label={`Open Slack thread for ${repo}#${number}`}
             title="Open Slack thread"
-            className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 hover:bg-accent"
+            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-border hover:bg-accent"
           >
-            <SlackLogo className="size-3.5" /> Slack
+            <SlackLogo className="size-3.5" />
           </UrlLink>
         ) : null}
       </div>
