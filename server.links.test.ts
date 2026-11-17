@@ -107,6 +107,30 @@ describe("native PR thread link discovery", () => {
     await harness.behavior.callRpc("listLinks");
     expect(lookup).toHaveBeenCalledTimes(1);
   });
+  it("matches native PR URLs to cached rows after a repository transfer", async () => {
+    const { bb, harness } = await start([thread("worker", "env")], {
+      env: {
+        outcome: "available",
+        pullRequest: { url: "https://github.com/new-org/widgets/pull/42" },
+      },
+    });
+    bb.storage.database().prepare(`
+      INSERT INTO items
+        (repo, number, kind, title, state, author, labels, url, body, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "acme/widgets", 42, "pr", "Transferred PR", "OPEN", "alice", "[]",
+      "https://github.com/new-org/widgets/pull/42", "", "2026-01-01T00:00:00Z",
+    );
+    await bb.storage.kv.set("link:pr:acme/widgets#42", [stored("worker")]);
+    expect(await harness.behavior.callRpc("listLinks")).toEqual({
+      links: {
+        "pr:acme/widgets#42": [expect.objectContaining({
+          repo: "acme/widgets", number: 42, threadId: "worker",
+        })],
+      },
+    });
+  });
   it("hides archived explicit PR and issue links and restores them after unarchiving", async () => {
     const worker = thread("worker", "env");
     const { bb, harness } = await start([worker], { env: available(42) });

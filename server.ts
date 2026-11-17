@@ -1320,8 +1320,16 @@ export default async function plugin(bb: BbPluginApi) {
       byEnvironment.set(thread.environmentId, group);
     }
     const environments = [...byEnvironment.keys()];
+    const cachedPulls = listCachedItems({ kind: "pr" });
+    const reposByPullUrl = new Map<string, string>();
+    for (const item of cachedPulls) {
+      const pull = parsePullUrl(item.url);
+      if (pull) {
+        reposByPullUrl.set(`${pull.repo.toLowerCase()}#${pull.number}`, item.repo);
+      }
+    }
     const repos = new Map(
-      listCachedItems({ kind: "pr" }).map((item) => [
+      cachedPulls.map((item) => [
         item.repo.toLowerCase(),
         item.repo,
       ]),
@@ -1342,7 +1350,10 @@ export default async function plugin(bb: BbPluginApi) {
             row?.outcome === "available" ? row.pullRequest.url : null,
           );
           if (!pull) continue;
-          const repo = repos.get(pull.repo.toLowerCase()) ?? pull.repo;
+          const repo =
+            reposByPullUrl.get(`${pull.repo.toLowerCase()}#${pull.number}`) ??
+            repos.get(pull.repo.toLowerCase()) ??
+            pull.repo;
           const key = `pr:${repo}#${pull.number}`;
           for (const thread of byEnvironment.get(environmentId) ?? []) {
             const links = (result[key] ??= []);
