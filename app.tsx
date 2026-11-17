@@ -2780,6 +2780,8 @@ function LinkedPrSummary({
       repo={repo}
       number={number}
       title={details.title}
+      author={item?.author ?? null}
+      assignees={item?.assignees ?? null}
       url={details.url}
       slackUrl={slackUrl}
       noteEditor={

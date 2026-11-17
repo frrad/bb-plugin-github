@@ -84,6 +84,8 @@ export function ThreadPrSummary({
   repo,
   number,
   title,
+  author,
+  assignees,
   url,
   slackUrl,
   noteEditor,
@@ -92,6 +94,8 @@ export function ThreadPrSummary({
   repo: string;
   number: number;
   title: string;
+  author: string | null;
+  assignees: string[] | null;
   url: string;
   slackUrl?: string;
   noteEditor: ReactNode;
@@ -160,6 +164,22 @@ export function ThreadPrSummary({
       >
         {title}
       </UrlLink>
+      <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 text-xs">
+        <dt className="text-muted-foreground">Author</dt>
+        <dd>
+          {author === null ? "—" : author ? `@${author}` : "Unknown"}
+        </dd>
+        <dt className="text-muted-foreground">
+          {assignees && assignees.length > 1 ? "Assignees" : "Assignee"}
+        </dt>
+        <dd>
+          {assignees === null
+            ? "—"
+            : assignees.length
+              ? assignees.map((login) => `@${login}`).join(", ")
+              : "Unassigned"}
+        </dd>
+      </dl>
       <div className="mt-4 border-t border-border/60 pt-3">{noteEditor}</div>
     </aside>
   );
