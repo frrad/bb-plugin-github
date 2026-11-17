@@ -59,6 +59,13 @@ export function ItemNoteEditor({
         id={id}
         value={note.body}
         rows={3}
+        style={{
+          fieldSizing: "content",
+          minHeight: "5rem",
+          maxHeight: "min(24rem, 50vh)",
+          resize: "none",
+          overflowY: "auto",
+        }}
         maxLength={100_000}
         disabled={!note.loaded}
         onBlur={() => {
