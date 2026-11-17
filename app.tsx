@@ -2948,7 +2948,7 @@ function GithubPanel({ subPath }: PluginNavPanelProps) {
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
-      <div className="mx-auto w-full max-w-5xl space-y-4">
+      <div className="w-full space-y-4">
         <GithubPanelBody
           route={route}
           navigate={navigate}
